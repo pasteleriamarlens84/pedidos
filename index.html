@@ -1,0 +1,1417 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<script>
+/* Connects this page to the shop's Google Apps Script. Same calls as google.script.run, sent with fetch. */
+(function(){
+  var API = "https://script.google.com/macros/s/AKfycbzbShb_LwPZ1fF0jXigcof0krVUVVrQAl9BarFpFWDGWBzrCFPiQvuRPY0Zb76-qHvCbg/exec";
+  function call(fn, args, ok, fail){
+    fetch(API, {method: "POST", body: JSON.stringify({fn: fn, args: args}),
+      headers: {"Content-Type": "text/plain;charset=utf-8"}, credentials: "omit", redirect: "follow"})
+      .then(function(r){ if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function(j){ if (j && j.ok) { if (ok) ok(j.data); } else if (fail) fail(new Error((j && j.error) || "Error")); })
+      .catch(function(e){ if (fail) fail(e); });
+  }
+  function runner(){
+    var ok = null, fail = null, p;
+    p = new Proxy({}, {get: function(_, k){
+      if (k === "withSuccessHandler") return function(f){ ok = f; return p; };
+      if (k === "withFailureHandler") return function(f){ fail = f; return p; };
+      return function(){ call(k, Array.prototype.slice.call(arguments), ok, fail); };
+    }});
+    return p;
+  }
+  window.google = {script: {run: new Proxy({}, {get: function(_, k){ return runner()[k]; }})}};
+})();
+</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pedidos · Pastelería Marlen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FFF5F7; --surface:#FFFFFF; --ink:#3A1F1D; --muted:#80605C; --line:#F0D3D9;
+  --accent:#B83257; --accent-ink:#FFFFFF; --accent-soft:#FBE1E8;
+  --butter:#B7800B; --butter-soft:#FDF1D3;
+  --mint:#1F7A5C; --mint-soft:#DDF2EA;
+  --danger:#C62828; --danger-soft:#FDE3E3;
+  --radius-lg:18px; --radius-sm:10px;
+  --font:"Bricolage Grotesque", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#1C1313; --surface:#2A1D1C; --ink:#FBEDEF; --muted:#C4A8A5; --line:#46302F;
+    --accent:#F07A98; --accent-ink:#2A0F17; --accent-soft:#4A2330;
+    --butter:#F2C14E; --butter-soft:#43361A;
+    --mint:#5BC79C; --mint-soft:#1D3A30;
+    --danger:#FF7070; --danger-soft:#4A1F1F;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#1C1313; --surface:#2A1D1C; --ink:#FBEDEF; --muted:#C4A8A5; --line:#46302F;
+  --accent:#F07A98; --accent-ink:#2A0F17; --accent-soft:#4A2330;
+  --butter:#F2C14E; --butter-soft:#43361A;
+  --mint:#5BC79C; --mint-soft:#1D3A30;
+  --danger:#FF7070; --danger-soft:#4A1F1F;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%}
+body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:17px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:12px 16px;flex-wrap:wrap}
+.brand{font-weight:800;font-size:22px;letter-spacing:-.01em;margin-right:auto}
+.tabs{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px;overflow-x:auto;max-width:100%}
+.tabs button{border:0;background:none;padding:8px 16px;border-radius:999px;cursor:pointer;font-weight:600;color:var(--muted);white-space:nowrap}
+.tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+.status-dot{font-size:14px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.status-dot i{width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block}
+.status-dot.live i{background:var(--mint)}
+.status-dot.off i{background:var(--danger)}
+
+main{padding:16px;max-width:1600px;margin:0 auto}
+.notice{background:var(--danger-soft);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px}
+.notice.soft{background:var(--butter-soft)}
+
+/* ---------- Form ---------- */
+.form-wrap{max-width:740px;margin:0 auto}
+.form-wrap h1{font-size:30px;font-weight:800;letter-spacing:-.02em;margin:8px 0 4px}
+.lead{color:var(--muted);margin:0 0 20px}
+fieldset{border:1px solid var(--line);background:var(--surface);border-radius:var(--radius-lg);padding:18px;margin:0 0 16px;min-width:0}
+legend{font-weight:800;font-size:19px;padding:0 6px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row.pc{grid-template-columns:3fr 1fr}
+@media (max-width:560px){.row,.row.pc{grid-template-columns:1fr}}
+label.f{display:block;margin-bottom:12px}
+.lbl{display:block;font-size:15px;font-weight:600;margin-bottom:5px}
+.lbl small{font-weight:400;color:var(--muted)}
+input[type=text],input[type=tel],input[type=date],input[type=time],input[type=number],textarea,select{
+  width:100%;padding:12px 13px;border:1.5px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);font-size:17px;min-height:48px}
+textarea{min-height:80px;resize:vertical}
+input:focus,textarea:focus,select:focus{border-color:var(--accent);outline:none}
+input.bad{border-color:var(--danger)}
+.hint{font-size:14px;color:var(--muted);margin:-6px 0 12px}
+.hint.err{color:var(--danger)}
+.seg{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.seg label{flex:1;min-width:100px;position:relative}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:block;text-align:center;padding:12px;border:1.5px solid var(--line);border-radius:var(--radius-sm);cursor:pointer;font-weight:600;background:var(--bg)}
+.seg input:checked+span{border-color:var(--accent);background:var(--accent-soft)}
+.seg input:focus-visible+span{outline:3px solid var(--accent);outline-offset:2px}
+
+.hora12{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.time .ap,.clock .ap{font-size:.45em;font-weight:700;letter-spacing:0;margin-left:3px}
+.extras{display:grid;gap:8px;margin-bottom:12px}
+.tops{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:12px}
+.tops label{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);cursor:pointer;font-weight:600}
+.tops input{width:22px;height:22px;flex:none;accent-color:var(--accent)}
+.ex{display:grid;grid-template-columns:auto 1fr auto 76px;gap:10px;align-items:center;padding:8px 10px;border:1.5px solid var(--line);border-radius:var(--radius-sm);background:var(--bg)}
+.ex input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent)}
+.ex .p{color:var(--muted);font-size:15px;white-space:nowrap}
+.ex input[type=number]{min-height:38px;padding:6px 8px;text-align:center}
+.ex input[type=number]:disabled{opacity:.4}
+
+.photos{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.ph{position:relative;width:96px;height:96px;border-radius:12px;overflow:hidden;background:var(--bg);border:1.5px solid var(--line)}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.ph button{position:absolute;top:4px;right:4px;border:0;border-radius:999px;background:rgba(0,0,0,.65);color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px;line-height:1}
+.ph.loading::after{content:"Subiendo…";position:absolute;inset:0;display:grid;place-items:center;background:rgba(255,255,255,.75);font-size:13px;font-weight:600;color:#3A1F1D}
+.addph{width:96px;height:96px;border:1.5px dashed var(--line);border-radius:12px;display:grid;place-items:center;text-align:center;cursor:pointer;font-size:14px;font-weight:600;color:var(--muted);padding:6px}
+.addph:hover{border-color:var(--accent);color:var(--ink)}
+.addph input{position:absolute;opacity:0;width:1px;height:1px}
+
+.totals{border-top:1px dashed var(--line);padding-top:12px;margin-top:4px}
+.totals div{display:flex;justify-content:space-between;gap:10px;font-size:16px;margin-bottom:4px;color:var(--muted)}
+.totals div b{color:var(--ink);font-weight:600}
+.totals .grand{font-size:22px;font-weight:800;color:var(--ink);margin-top:6px}
+.totals .grand b{font-weight:800}
+.totals .saldo b{color:var(--accent)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:999px;padding:13px 22px;font-weight:700;cursor:pointer;min-height:48px;text-decoration:none;color:inherit}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent;border:1.5px solid var(--line)}
+.btn.small{padding:8px 14px;min-height:38px;font-size:15px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;position:sticky;bottom:env(safe-area-inset-bottom,0px);background:var(--bg);padding:12px 0;z-index:2}
+.editing-banner{background:var(--butter-soft);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+
+/* ---------- Kitchen ---------- */
+.k-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.clock{font-size:40px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-right:auto;line-height:1}
+.clock small{display:block;font-size:15px;font-weight:600;color:var(--muted);letter-spacing:0;margin-top:4px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips button{border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 14px;cursor:pointer;font-weight:600}
+.chips button[aria-pressed="true"]{border-color:var(--ink);background:var(--ink);color:var(--bg)}
+.sync{font-size:14px;color:var(--muted);margin:-6px 4px 10px}
+.sync.err{color:var(--danger);font-weight:600}
+.sync button{margin-top:6px}
+.col[data-s=web]{--c:var(--ink);--cs:var(--line)}
+.tag.web{background:var(--ink);color:var(--bg)}
+.confirm{border:1.5px solid var(--line);border-radius:14px;padding:14px;margin:0 0 14px;background:var(--bg)}
+.cl{display:grid;grid-template-columns:1fr 110px;gap:8px;margin-bottom:8px}
+.cl input{min-height:42px;padding:8px 10px}
+#waBtn[aria-disabled="true"]{opacity:.5;pointer-events:none}
+.sheet .links a{color:inherit;font-weight:600;margin-right:12px}
+.coltabs{display:none}
+@media (max-width:760px){
+  .coltabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px}
+  .coltabs button{flex:none;border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 12px;font-weight:600;cursor:pointer;white-space:nowrap}
+  .coltabs button[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  .coltabs b{display:inline-block;min-width:1.4em;text-align:center}
+  .board{grid-template-columns:1fr!important;overflow:visible!important}
+  .board .col{display:none}
+  .board[data-show="web"] .col[data-s="web"], .board[data-show="pendiente"] .col[data-s="pendiente"],
+  .board[data-show="preparacion"] .col[data-s="preparacion"], .board[data-show="listo"] .col[data-s="listo"]{display:block}
+  .clock{font-size:30px}
+  .k-bar .btn.small{padding:6px 10px;font-size:14px}
+  #fsBtn{display:none}
+  .card .time{font-size:28px}
+}
+.board{display:grid;grid-template-columns:repeat(4,minmax(260px,1fr));gap:14px;overflow-x:auto;align-items:start}
+.col{background:var(--surface);border-radius:var(--radius-lg);border-top:6px solid var(--c);padding:12px;min-height:200px}
+.col h2{margin:2px 4px 12px;font-size:21px;display:flex;justify-content:space-between;align-items:baseline}
+.col h2 span{font-size:16px;color:var(--muted);font-weight:600}
+.col[data-s=pendiente]{--c:var(--accent);--cs:var(--accent-soft)}
+.col[data-s=preparacion]{--c:var(--butter);--cs:var(--butter-soft)}
+.col[data-s=listo]{--c:var(--mint);--cs:var(--mint-soft)}
+.empty{color:var(--muted);padding:16px 6px;font-size:15px}
+
+.card{display:block;width:100%;text-align:left;background:var(--bg);border:2px solid transparent;border-radius:14px;padding:12px 14px;margin-bottom:10px;cursor:pointer}
+.card:hover{border-color:var(--line)}
+.card .when{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.card .time{font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+.card .day{font-size:15px;font-weight:600;color:var(--muted)}
+.card .prod{font-size:21px;font-weight:800;line-height:1.2;margin-top:8px}
+.card .prod .q{color:var(--c)}
+.card .spec{font-size:17px;font-weight:600;margin-top:2px}
+.card .spec2{font-size:15px;color:var(--muted)}
+.card .body{display:flex;gap:10px;align-items:flex-start}
+.card .body > div{flex:1;min-width:0}
+.card .thumb{width:72px;height:72px;border-radius:10px;object-fit:cover;flex:none;margin-top:8px;background:var(--surface)}
+.card .ded{margin-top:8px;padding:8px 10px;border-left:4px solid var(--c);background:var(--surface);border-radius:6px;font-size:16px}
+.card .ded.deco{border-left-style:dotted}
+.card .meta{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;font-size:14px;color:var(--muted);align-items:center}
+.tag{display:inline-block;font-size:13px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--cs,var(--accent-soft));color:var(--ink)}
+.tag.late{background:var(--danger);color:#fff}
+.tag.soon{background:var(--butter-soft);border:1px solid var(--butter)}
+.tag.warn{background:var(--danger-soft);color:var(--danger)}
+.card.late{border-color:var(--danger)}
+.card.fresh{animation:flash 2.4s ease-out 1}
+@keyframes flash{0%{box-shadow:0 0 0 6px var(--accent)}100%{box-shadow:0 0 0 0 transparent}}
+@media (prefers-reduced-motion:reduce){.card.fresh{animation:none;border-color:var(--accent)}}
+
+/* ---------- Prices ---------- */
+.price-wrap{max-width:820px;margin:0 auto}
+.price-wrap h1{font-size:30px;font-weight:800;letter-spacing:-.02em;margin:8px 0 4px}
+.ptable{width:100%;border-collapse:collapse}
+.ptable th{font-size:14px;color:var(--muted);text-align:left;font-weight:600;padding:0 6px 6px}
+.ptable td{padding:4px 6px;vertical-align:middle}
+.ptable input{min-height:42px;padding:8px 10px}
+.ptable td.rmc{width:44px}
+.ptable td:has(.pp){width:100px}
+.ptable select{min-height:42px;padding:8px;min-width:118px}
+.ptable .rm{border:0;background:none;color:var(--muted);cursor:pointer;font-size:20px;width:38px;height:38px;border-radius:8px}
+.ptable .rm:hover{background:var(--danger-soft);color:var(--danger)}
+@media (max-width:560px){.ptable th:nth-child(2),.ptable td:nth-child(2){width:72px}}
+
+/* ---------- Sheet ---------- */
+dialog{border:0;border-radius:var(--radius-lg);padding:0;max-width:600px;width:calc(100% - 24px);background:var(--surface);color:var(--ink)}
+dialog::backdrop{background:rgba(20,8,8,.55)}
+.sheet{padding:20px;max-height:86vh;overflow-y:auto}
+.sheet h2{margin:0 0 2px;font-size:26px}
+.sheet .sub{color:var(--muted);margin:0 0 14px}
+.sheet dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0 0 16px}
+.sheet dt{color:var(--muted);font-size:15px}
+.sheet dd{margin:0;font-weight:600;min-width:0;overflow-wrap:anywhere}
+.sheet .imgs{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px}
+.sheet .imgs figure{margin:0;flex:1;min-width:140px;max-width:260px}
+.sheet .imgs img{width:100%;border-radius:12px;display:block;cursor:zoom-in;background:var(--bg)}
+.sheet .imgs figcaption{font-size:14px;color:var(--muted);margin-top:4px}
+.sheet .moves{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.sheet .moves .btn{width:100%}
+.btn.st-pendiente{background:var(--accent-soft)}
+.btn.st-preparacion{background:var(--butter-soft)}
+.btn.st-listo{background:var(--mint-soft)}
+.btn.st-entregado{background:var(--ink);color:var(--bg)}
+.btn.danger{background:none;color:var(--danger);border:1.5px solid var(--danger-soft)}
+.sheet .foot{display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;border-top:1px solid var(--line);padding-top:12px;margin-top:6px}
+#zoom{max-width:96vw;width:auto;background:transparent}
+#zoom img{max-width:94vw;max-height:88vh;display:block;border-radius:12px}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:999px;font-weight:600;z-index:50;max-width:90vw;text-align:center}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">Pedidos</div>
+  <div class="status-dot" id="conn"><i></i><span>Conectando…</span></div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-view="form">Nuevo pedido</button>
+    <button role="tab" aria-selected="false" data-view="kitchen">Cocina</button>
+    <button role="tab" aria-selected="false" data-view="prices">Precios</button>
+  </nav>
+</header>
+
+<main>
+  <div id="dbNotice" class="notice" hidden>No se pudo conectar con la hoja de pedidos. Revisa el internet y recarga la página. Si sigue igual, confirma que entraste con la cuenta de Google de la pastelería.</div>
+
+  <!-- ===== FORM ===== -->
+  <section id="view-form" class="form-wrap">
+    <h1 id="formTitle">Nuevo pedido</h1>
+    <p class="lead">Anota el pedido y aparece al instante en la pantalla de la cocina.</p>
+    <div class="notice soft" id="noCatalog" hidden>Todavía no hay productos con precio. Agrégalos en la pestaña Precios.</div>
+    <div class="editing-banner" id="editBanner" hidden>
+      <span>Estás editando un pedido existente.</span>
+      <button class="btn ghost small" type="button" id="cancelEdit">Cancelar edición</button>
+    </div>
+    <form id="orderForm" novalidate>
+      <fieldset>
+        <legend>Cliente</legend>
+        <div class="row">
+          <label class="f"><span class="lbl">Nombre</span><input type="text" name="cliente" autocomplete="off"></label>
+          <label class="f"><span class="lbl">Teléfono para confirmar</span><input type="tel" name="telefono" inputmode="numeric" maxlength="9" placeholder="8888 8888" autocomplete="off"></label>
+        </div>
+        <p class="hint" id="telHint" hidden></p>
+        <span class="lbl">¿Cómo llegó el pedido?</span>
+        <div class="seg">
+          <label><input type="radio" name="origen" value="WhatsApp" checked><span>WhatsApp</span></label>
+          <label><input type="radio" name="origen" value="Llamada"><span>Llamada</span></label>
+          <label><input type="radio" name="origen" value="En persona"><span>En persona</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Entrega</legend>
+        <div class="row">
+          <label class="f"><span class="lbl">Fecha de entrega</span><input type="date" name="fecha"></label>
+          <div class="f"><span class="lbl">Hora</span>
+            <div class="hora12">
+              <select id="hH" name="hH" aria-label="Hora"><option value="">Hora</option></select>
+              <select id="hM" aria-label="Minutos"></select>
+              <select id="hAP" aria-label="a.m. o p.m."><option value="am">a.m.</option><option value="pm">p.m.</option></select>
+            </div>
+            <input type="hidden" name="hora">
+          </div>
+        </div>
+        <div class="seg" hidden>
+          <label><input type="radio" name="entrega" value="Retira" checked><span>Retira en el local</span></label>
+          <label><input type="radio" name="entrega" value="Envío"><span>Envío</span></label>
+        </div>
+        <label class="f" id="dirWrap" hidden><span class="lbl">Dirección</span><input type="text" name="direccion" autocomplete="off"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Queque</legend>
+        <label class="f"><span class="lbl">Forma y tamaño</span><select name="producto" id="prodSel"></select></label>
+        <input type="hidden" name="cantidad" value="1">
+        <span class="lbl">Tipo de queque</span>
+        <div class="seg">
+          <label><input type="radio" name="tipo" value="Húmedo" checked><span>Húmedo</span></label>
+          <label><input type="radio" name="tipo" value="Seco"><span>Seco</span></label>
+        </div>
+        <span class="lbl">Sabor</span>
+        <div class="seg" id="saborSeg"></div>
+        <span class="lbl">Relleno</span>
+        <div class="f" style="margin-bottom:12px"><select id="rellenoSel" name="relleno" aria-label="Relleno"></select></div>
+        <label class="f" id="rellenoOtroWrap" hidden><span class="lbl">Detalle del relleno</span><input type="text" name="rellenoOtro" autocomplete="off"></label>
+        <span class="lbl">Topping <small>(puede elegir varios)</small></span>
+        <div class="tops" id="toppingSeg"></div>
+        <label class="f" id="toppingOtroWrap" hidden><span class="lbl">Detalle del topping</span><input type="text" name="toppingOtro" autocomplete="off"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Decoración</legend>
+        <label class="f"><span class="lbl">Mensaje para escribirle</span><input type="text" name="mensaje" autocomplete="off" placeholder="Ej. Feliz cumple Ana"></label>
+        <label class="f"><span class="lbl">Especificaciones de la decoración <small>(colores, tema, figuras)</small></span><textarea name="decoracion"></textarea></label>
+        <span class="lbl">Imagen de referencia <small>(opcional)</small></span>
+        <div class="photos" id="refPhotos"></div>
+        <p class="hint" id="refHint" hidden>Para subir fotos necesitas permiso de edición en esta página.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Extras</legend>
+        <div class="extras" id="extrasBox"></div>
+        <label class="f"><span class="lbl">Decoración especial <small>(monto según referencia, ₡)</small></span><input type="number" name="decoEspecial" min="0" step="100" inputmode="numeric" placeholder="0"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Pago</legend>
+        <label class="f"><span class="lbl">Abono recibido (₡)</span><input type="number" name="anticipo" min="0" step="100" inputmode="numeric" placeholder="0"></label>
+        <span class="lbl">Comprobante de pago o abono <small>(foto o captura del SINPE)</small></span>
+        <div class="photos" id="payPhotos"></div>
+        <div class="totals" id="totals"></div>
+        <label class="f" style="margin-top:14px"><span class="lbl">Notas internas</span><textarea name="notas" placeholder="Alergias, quién lo recoge, etc."></textarea></label>
+      </fieldset>
+
+      <div class="form-actions">
+        <button class="btn primary" type="submit" id="saveBtn">Guardar pedido</button>
+        <button class="btn ghost" type="button" id="clearBtn">Limpiar</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ===== KITCHEN ===== -->
+  <section id="view-kitchen" hidden>
+    <div class="k-bar">
+      <div class="clock" id="clock">--:--<small></small></div>
+      <div class="chips" id="dayChips">
+        <button aria-pressed="true" data-f="hoy">Hoy</button>
+        <button aria-pressed="false" data-f="manana">Mañana</button>
+        <button aria-pressed="false" data-f="semana">7 días</button>
+        <button aria-pressed="false" data-f="todo">Todo</button>
+      </div>
+      <button class="btn ghost small" id="soundBtn" aria-pressed="false">Sonido apagado</button>
+      <button class="btn ghost small" id="fsBtn">Pantalla completa</button>
+      <button class="btn ghost small" id="exportBtn" hidden>Exportar pedidos</button>
+    </div>
+    <div class="coltabs" id="colTabs" role="tablist">
+      <button data-col="web">Por confirmar <b id="t-web">0</b></button>
+      <button data-col="pendiente" aria-selected="true">Por hacer <b id="t-pendiente">0</b></button>
+      <button data-col="preparacion">En preparación <b id="t-preparacion">0</b></button>
+      <button data-col="listo">Listo <b id="t-listo">0</b></button>
+    </div>
+    <div class="board" id="board" data-show="pendiente">
+      <div class="col" data-s="web"><h2>Por confirmar <span id="n-web">0</span></h2><p class="sync" id="webSync">Conectando con el formulario…</p><div id="l-web"></div></div>
+      <div class="col" data-s="pendiente"><h2>Por hacer <span id="n-pendiente">0</span></h2><div id="l-pendiente"></div></div>
+      <div class="col" data-s="preparacion"><h2>En preparación <span id="n-preparacion">0</span></h2><div id="l-preparacion"></div></div>
+      <div class="col" data-s="listo"><h2>Listo para entregar <span id="n-listo">0</span></h2><div id="l-listo"></div></div>
+    </div>
+  </section>
+
+  <!-- ===== PRICES ===== -->
+  <section id="view-prices" class="price-wrap" hidden>
+    <h1>Precios y opciones</h1>
+    <p class="lead">Lo que cambies aquí se usa en los pedidos nuevos. Los pedidos ya guardados conservan el precio con que se tomaron.</p>
+    <fieldset>
+      <legend>Formas y tamaños</legend>
+      <table class="ptable"><thead><tr><th>Forma</th><th>Porciones</th><th>Tamaño</th><th>Precio base (₡)</th><th></th></tr></thead><tbody id="pProd"></tbody></table>
+      <button class="btn ghost small" type="button" id="addProd" style="margin-top:8px">+ Agregar tamaño</button>
+    </fieldset>
+    <fieldset>
+      <legend>Extras</legend>
+      <table class="ptable"><thead><tr><th>Extra</th><th>Precio (₡)</th><th></th></tr></thead><tbody id="pExtra"></tbody></table>
+      <button class="btn ghost small" type="button" id="addExtra" style="margin-top:8px">+ Agregar extra</button>
+    </fieldset>
+    <fieldset>
+      <legend>Topping adicional</legend>
+      <p class="hint" style="margin:0 0 10px">El primer topping está incluido. Cada topping adicional se cobra según el tamaño del queque.</p>
+      <div class="row" style="grid-template-columns:repeat(3,1fr)">
+        <label class="f"><span class="lbl">Pequeño (₡)</span><input type="number" id="tePeq" min="0" step="100"></label>
+        <label class="f"><span class="lbl">Mediano (₡)</span><input type="number" id="teMed" min="0" step="100"></label>
+        <label class="f"><span class="lbl">Grande (₡)</span><input type="number" id="teGra" min="0" step="100"></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Opciones del formulario</legend>
+      <label class="f"><span class="lbl">Sabores <small>(uno por línea)</small></span><textarea id="pSabores"></textarea></label>
+      <label class="f"><span class="lbl">Rellenos <small>(uno por línea)</small></span><textarea id="pRellenos"></textarea></label>
+      <label class="f"><span class="lbl">Toppings <small>(uno por línea)</small></span><textarea id="pToppings"></textarea></label>
+    </fieldset>
+    <div class="form-actions">
+      <button class="btn primary" type="button" id="savePrices">Guardar precios</button>
+      <button class="btn ghost" type="button" id="resetPrices">Descartar cambios</button>
+    </div>
+  </section>
+</main>
+
+<dialog id="sheet"><div class="sheet" id="sheetBody"></div></dialog>
+<dialog id="zoom"><img alt="Imagen ampliada"></dialog>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+  const $ = (s, r=document) => r.querySelector(s);
+  const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const crc = n => "\u20a1" + Math.round(Number(n)||0).toLocaleString("es-CR");
+  const pad = n => String(n).padStart(2,"0");
+  const todayStr = (d=new Date()) => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+  const BLANK = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+  const photoCache = {}, photoLoading = {};
+  function blob(id){
+    if (photoCache[id]) return photoCache[id];
+    if (!photoLoading[id] && window.google && google.script){
+      photoLoading[id] = true;
+      api("getPhoto", id).then(url => {
+        photoCache[id] = url;
+        document.querySelectorAll('img[data-pid="' + CSS.escape(id) + '"]').forEach(im => im.src = url);
+      }).catch(() => {});
+    }
+    return BLANK;
+  }
+  const DAYS = ["domingo","lunes","martes","mi\u00e9rcoles","jueves","viernes","s\u00e1bado"];
+  const MONTHS = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  const STATUS = {pendiente:"Por hacer", preparacion:"En preparaci\u00f3n", listo:"Listo para entregar", entregado:"Entregado"};
+  const OTROS = "Otros";
+  const ABONO_MIN = 5000, ABONO_UMBRAL = 14000;
+  const EMPTY_CAT ={productos:[], extras:[], sabores:["Vainilla","Chocolate"], rellenos:[], toppings:[]};
+
+  let db = null, assets = null, orders = [], catalog = EMPTY_CAT, catalogLoaded = false, pricesDirty = false;
+  let editingId = null, seen = new Set(), firstLoad = true;
+  let refIds = [], payIds = [], uploading = 0;
+  let dayFilter = "hoy", soundOn = false, audioCtx = null;
+
+  /* 12-hour time helpers. Stored value stays "HH:MM" (24 h) so sorting keeps working. */
+  function parseHora(s){
+    const m = String(s||"").trim().toLowerCase().match(/^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*([ap])?\.?\s*m?\.?$/);
+    if (!m) return "";
+    let h = Number(m[1]); const mi = Number(m[2]||0);
+    if (m[3] === "p" && h < 12) h += 12;
+    if (m[3] === "a" && h === 12) h = 0;
+    return h > 23 || mi > 59 ? "" : pad(h) + ":" + pad(mi);
+  }
+  function hora12parts(hhmm){
+    const v = parseHora(hhmm); if (!v) return null;
+    const [h, mi] = v.split(":").map(Number);
+    return {h: h % 12 || 12, m: pad(mi), ap: h < 12 ? "a.m." : "p.m."};
+  }
+  const fmt12 = hhmm => { const p = hora12parts(hhmm); return p ? `${p.h}:${p.m} ${p.ap}` : String(hhmm||""); };
+  const fmt12html = hhmm => { const p = hora12parts(hhmm); return p ? `${p.h}:${p.m}<span class="ap">${p.ap}</span>` : esc(hhmm); };
+  const CATS = ["Peque\u00f1o","Mediano","Grande"];
+  const categoriaDefault = p => { const n = Number(p.porciones)||0; return n <= 12 ? "Peque\u00f1o" : n <= 22 ? "Mediano" : "Grande"; };
+  const prodKey = p => p.forma + "|" + p.porciones;
+  const prodLabel = p => `${p.forma} \u00b7 ${p.porciones} ${Number(p.porciones) === 1 ? "porci\u00f3n" : "porciones"}`;
+
+  function toast(msg){
+    const t = $("#toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toast._t); toast._t = setTimeout(()=>{ t.hidden = true; }, 2800);
+  }
+  function setConn(state, text){ const c = $("#conn"); c.className = "status-dot " + state; c.querySelector("span").textContent = text; }
+
+  /* ---------- Views ---------- */
+  function showView(v){
+    ["form","kitchen","prices"].forEach(x => $("#view-"+x).hidden = x !== v);
+    $$(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.view === v)));
+    try{ history.replaceState(null, "", "#" + ({form:"pedido",kitchen:"cocina",prices:"precios"})[v]); }catch(e){}
+    if (v === "kitchen") renderBoard();
+    if (v === "prices" && !pricesDirty) renderPrices();
+  }
+  $$(".tabs button").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
+
+  /* ---------- Catalog -> form controls ---------- */
+  function renderCatalogControls(){
+    const sel = $("#prodSel"), prev = sel.value;
+    const groups = {};
+    catalog.productos.forEach(p => (groups[p.forma] = groups[p.forma] || []).push(p));
+    sel.innerHTML = `<option value="">Elegir\u2026</option>` + Object.keys(groups).map(f =>
+      `<optgroup label="${esc(f)}">` + groups[f].map(p => `<option value="${esc(prodKey(p))}">${esc(prodLabel(p))} \u00b7 ${esc(crc(p.precio))}</option>`).join("") + `</optgroup>`
+    ).join("");
+    if (prev) sel.value = prev;
+    $("#noCatalog").hidden = !catalogLoaded || catalog.productos.length > 0;
+
+    const checkedSabor = $('input[name=sabor]:checked')?.value;
+    $("#saborSeg").innerHTML = (catalog.sabores.length ? catalog.sabores : ["Vainilla","Chocolate"]).map((s,i) =>
+      `<label><input type="radio" name="sabor" value="${esc(s)}"${(checkedSabor ? s === checkedSabor : i === 0) ? " checked" : ""}><span>${esc(s)}</span></label>`).join("");
+
+    const rSel = $("#rellenoSel").value;
+    $("#rellenoSel").innerHTML = `<option value="">Elegir relleno\u2026</option>` + catalog.rellenos.concat(OTROS).map(r =>
+      `<option value="${esc(r)}"${r === rSel ? " selected" : ""}>${esc(r)}</option>`).join("");
+    const tSel = $$('input[name=topping]:checked').map(x => x.value);
+    $("#toppingSeg").innerHTML = catalog.toppings.concat(OTROS).map(r =>
+      `<label><input type="checkbox" name="topping" value="${esc(r)}"${tSel.includes(r) ? " checked" : ""}><span>${esc(r)}</span></label>`).join("");
+    toggleOtros();
+
+    const state = readExtras();
+    $("#extrasBox").innerHTML = catalog.extras.length ? catalog.extras.map((e,i) => {
+      const s = state.find(x => x.nombre === e.nombre);
+      return `<label class="ex"><input type="checkbox" data-i="${i}"${s ? " checked" : ""}><span>${esc(e.nombre)}</span><span class="p">${esc(crc(e.precio))}</span><input type="number" class="exq" data-i="${i}" min="1" value="${s ? s.cantidad : 1}" aria-label="Cantidad"${s ? "" : " disabled"}></label>`;
+    }).join("") : `<p class="hint" style="margin:0">No hay extras configurados.</p>`;
+    updateTotals();
+  }
+  function toggleOtros(){
+    $("#rellenoOtroWrap").hidden = $("#rellenoSel").value !== OTROS;
+    $("#toppingOtroWrap").hidden = !$$('input[name=topping]:checked').some(x => x.value === OTROS);
+  }
+  $("#rellenoSel").addEventListener("change", toggleOtros);
+  $("#toppingSeg").addEventListener("change", () => { toggleOtros(); updateTotals(); });
+  function readRelleno(){
+    const v = $("#rellenoSel").value || "";
+    if (v !== OTROS) return v;
+    const d = form.rellenoOtro.value.trim(); return d ? "Otro: " + d : "Otro";
+  }
+  function readTopping(){
+    return $$('input[name=topping]:checked').map(x => {
+      if (x.value !== OTROS) return x.value;
+      const d = form.toppingOtro.value.trim(); return d ? "Otro: " + d : "Otro";
+    }).join(", ");
+  }
+  function setRelleno(v){
+    v = v || ""; let other = "";
+    if (v && !catalog.rellenos.includes(v)){ other = v.replace(/^Otro:?\s*/,""); v = OTROS; }
+    $("#rellenoSel").value = v;
+    form.rellenoOtro.value = other;
+  }
+  function setTopping(s){
+    const parts = String(s||"").split(/,\s*/).filter(Boolean); const known = [], other = [];
+    parts.forEach(p => catalog.toppings.includes(p) ? known.push(p) : other.push(p.replace(/^Otro:?\s*/,"")));
+    $$('input[name=topping]').forEach(r => r.checked = known.includes(r.value) || (r.value === OTROS && other.length > 0));
+    form.toppingOtro.value = other.filter(Boolean).join(", ");
+  }
+  $("#extrasBox").addEventListener("change", e => {
+    if (e.target.type === "checkbox"){ e.target.closest(".ex").querySelector(".exq").disabled = !e.target.checked; }
+    updateTotals();
+  });
+  $("#extrasBox").addEventListener("input", updateTotals);
+
+  function readExtras(){
+    return $$("#extrasBox .ex").map(row => {
+      const cb = row.querySelector("input[type=checkbox]"); if (!cb || !cb.checked) return null;
+      const e = catalog.extras[cb.dataset.i]; if (!e) return null;
+      return {nombre:e.nombre, precio:Number(e.precio)||0, cantidad:Math.max(1, parseInt(row.querySelector(".exq").value,10)||1)};
+    }).filter(Boolean);
+  }
+  function selectedProduct(){ return catalog.productos.find(p => prodKey(p) === $("#prodSel").value) || null; }
+
+  function computeTotals(){
+    const p = selectedProduct();
+    const cant = Math.max(1, parseInt(form.cantidad.value,10)||1);
+    const base = p ? (Number(p.precio)||0) * cant : 0;
+    const ex = readExtras().reduce((s,e) => s + e.precio*e.cantidad, 0);
+    const deco = Number(form.decoEspecial.value)||0;
+    const nTop = $$('input[name=topping]:checked').length;
+    const cat = p ? (p.categoria || categoriaDefault(p)) : "";
+    const topUnit = Number((catalog.toppingExtra||{})[cat]) || 0;
+    const topExtra = Math.max(nTop - 1, 0) * topUnit;
+    const total = base + ex + deco + topExtra;
+    const abono = Number(form.anticipo.value)||0;
+    const personalizada = deco > 0 || !!form.decoracion.value.trim() || refIds.length > 0;
+    const requerido = total > ABONO_UMBRAL || personalizada;
+    return {p, cant, base, ex, deco, nTop, cat, topUnit, topExtra, total, abono, saldo:Math.max(total-abono,0), requerido, falta: requerido && abono < ABONO_MIN};
+  }
+  function updateTotals(){
+    const t = computeTotals();
+    $("#totals").innerHTML = `
+      <div><span>Queque${t.cant > 1 ? " \u00d7" + t.cant : ""}</span><b>${esc(crc(t.base))}</b></div>
+      ${t.ex ? `<div><span>Extras</span><b>${esc(crc(t.ex))}</b></div>` : ""}
+      ${t.nTop > 1 ? `<div><span>Toppings adicionales (${t.nTop - 1} \u00d7 ${esc(crc(t.topUnit))}, queque ${esc((t.cat||"").toLowerCase())})</span><b>${esc(crc(t.topExtra))}</b></div>` : ""}
+      ${t.deco ? `<div><span>Decoraci\u00f3n especial</span><b>${esc(crc(t.deco))}</b></div>` : ""}
+      <div class="grand"><span>Total</span><b>${esc(crc(t.total))}</b></div>
+      ${t.abono ? `<div><span>Abono</span><b>\u2212 ${esc(crc(t.abono))}</b></div>` : ""}
+      <div class="saldo"><span>Saldo pendiente</span><b>${esc(crc(t.saldo))}</b></div>
+      ${t.requerido ? `<div style="color:${t.falta ? "var(--danger)" : "var(--mint)"};font-weight:600;margin-top:6px"><span>${t.falta ? "Falta el abono m\u00ednimo obligatorio de " + esc(crc(ABONO_MIN)) : "Abono m\u00ednimo cubierto"}</span></div>` : ""}`;
+  }
+
+  /* ---------- Form ---------- */
+  const form = $("#orderForm");
+  ["cantidad","decoEspecial","anticipo","decoracion"].forEach(n => form[n].addEventListener("input", updateTotals));
+  $("#prodSel").addEventListener("change", updateTotals);
+
+  $("#hH").insertAdjacentHTML("beforeend", Array.from({length:12}, (_,i) => `<option value="${i+1}">${i+1}</option>`).join(""));
+  $("#hM").innerHTML = Array.from({length:12}, (_,i) => `<option value="${pad(i*5)}">${pad(i*5)}</option>`).join("");
+  function syncHora(){
+    const h = Number($("#hH").value);
+    if (!h){ form.hora.value = ""; return; }
+    let h24 = h % 12; if ($("#hAP").value === "pm") h24 += 12;
+    form.hora.value = pad(h24) + ":" + $("#hM").value;
+  }
+  function setHora(v){
+    const p = hora12parts(v);
+    if (!p){ $("#hH").value = ""; $("#hM").value = "00"; $("#hAP").value = "am"; syncHora(); return; }
+    $("#hH").value = String(p.h);
+    if (![...$("#hM").options].some(o => o.value === p.m)) $("#hM").insertAdjacentHTML("beforeend", `<option value="${p.m}">${p.m}</option>`);
+    $("#hM").value = p.m; $("#hAP").value = p.ap === "p.m." ? "pm" : "am"; syncHora();
+  }
+  ["#hH","#hM","#hAP"].forEach(s => $(s).addEventListener("change", syncHora));
+  function toggleDir(){ $("#dirWrap").hidden = form.entrega.value !== "Env\u00edo"; }
+  $$('input[name=entrega]').forEach(r => r.addEventListener("change", toggleDir));
+
+  const digits = s => String(s||"").replace(/\D/g,"");
+  form.telefono.addEventListener("input", () => {
+    const d = digits(form.telefono.value).slice(0,8);
+    form.telefono.value = d.length > 4 ? d.slice(0,4) + " " + d.slice(4) : d;
+    form.telefono.classList.remove("bad"); $("#telHint").hidden = true;
+  });
+  form.telefono.addEventListener("blur", () => {
+    const n = digits(form.telefono.value).length;
+    if (n && n !== 8){ form.telefono.classList.add("bad"); const h = $("#telHint"); h.textContent = "El tel\u00e9fono debe tener 8 d\u00edgitos."; h.className = "hint err"; h.hidden = false; }
+  });
+
+  /* ---------- Photos ---------- */
+  async function shrink(file){
+    if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type) && !/\.(jpe?g|png|webp|heic)$/i.test(file.name)) return file;
+    try{
+      const bmp = await createImageBitmap(file);
+      const max = 1600, k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+      const c = document.createElement("canvas"); c.width = Math.round(bmp.width*k); c.height = Math.round(bmp.height*k);
+      c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+      const out = await new Promise(r => c.toBlob(r, "image/jpeg", .82));
+      return out && out.size < file.size ? out : file;
+    }catch(e){ return file; }
+  }
+  function renderPhotos(boxId, ids, label){
+    const box = $("#"+boxId);
+    box.innerHTML = ids.map((id,i) => `<div class="ph"><img src="${esc(blob(id))}" data-pid="${esc(id)}" alt="${esc(label)} ${i+1}"><button type="button" data-rm="${i}" aria-label="Quitar foto">\u00d7</button></div>`).join("")
+      + (assets ? `<label class="addph">+ Agregar foto<input type="file" accept="image/*,application/pdf"></label>` : "");
+  }
+  function renderAllPhotos(){
+    renderPhotos("refPhotos", refIds, "Referencia");
+    renderPhotos("payPhotos", payIds, "Comprobante");
+    $("#refHint").hidden = !!assets || !db;
+    updateTotals();
+  }
+  function wirePhotos(boxId, getIds, setIds, label){
+    const box = $("#"+boxId);
+    box.addEventListener("click", e => {
+      const b = e.target.closest("[data-rm]"); if (!b) return;
+      const ids = getIds().slice(); ids.splice(Number(b.dataset.rm),1); setIds(ids); renderAllPhotos();
+    });
+    box.addEventListener("change", async e => {
+      if (e.target.type !== "file" || !e.target.files[0] || !assets) return;
+      const file = e.target.files[0];
+      const ph = document.createElement("div"); ph.className = "ph loading"; box.insertBefore(ph, box.lastElementChild);
+      uploading++; $("#saveBtn").disabled = true;
+      try{
+        const small = await shrink(file);
+        const res = await assets.upload(small, small.type ? undefined : {type:"image/jpeg"});
+        setIds(getIds().concat(res.id));
+      }catch(err){
+        const c = err && err.code;
+        toast(c === "too_large" ? "La foto es muy pesada." : c === "unsupported_type" ? "Ese tipo de archivo no se puede subir." : c === "quota_or_state" ? "No queda espacio para fotos." : "No se pudo subir la foto. Intenta de nuevo.");
+      }finally{ uploading--; $("#saveBtn").disabled = uploading > 0; renderAllPhotos(); }
+    });
+  }
+  wirePhotos("refPhotos", () => refIds, v => refIds = v, "Referencia");
+  wirePhotos("payPhotos", () => payIds, v => payIds = v, "Comprobante");
+
+  function resetForm(){
+    form.reset(); editingId = null; refIds = []; payIds = [];
+    form.fecha.value = todayStr(); form.cantidad.value = 1;
+    $("#editBanner").hidden = true; $("#formTitle").textContent = "Nuevo pedido";
+    $("#saveBtn").textContent = "Guardar pedido";
+    form.telefono.classList.remove("bad"); $("#telHint").hidden = true;
+    renderCatalogControls(); renderAllPhotos(); toggleDir(); updateTotals();
+  }
+  $("#clearBtn").addEventListener("click", resetForm);
+  $("#cancelEdit").addEventListener("click", resetForm);
+
+  function readForm(){
+    const t = computeTotals();
+    syncHora();
+    const fecha = form.fecha.value, hora = form.hora.value;
+    const [y,m,d] = fecha.split("-").map(Number); const [hh,mm] = (hora||"0:0").split(":").map(Number);
+    return {
+      cliente: form.cliente.value.trim(), telefono: digits(form.telefono.value),
+      origen: form.origen.value, fecha, hora,
+      dueAt: new Date(y, (m||1)-1, d||1, hh||0, mm||0).getTime(),
+      entrega: form.entrega.value, direccion: form.entrega.value === "Env\u00edo" ? form.direccion.value.trim() : "",
+      producto: t.p ? {forma:t.p.forma, porciones:t.p.porciones, precio:Number(t.p.precio)||0} : null,
+      cantidad: t.cant,
+      tipo: form.tipo.value, sabor: ($('input[name=sabor]:checked')||{}).value || "",
+      relleno: readRelleno(), topping: readTopping(),
+      mensaje: form.mensaje.value.trim(), decoracion: form.decoracion.value.trim(),
+      refImgs: refIds.slice(), extras: readExtras(), decoEspecial: t.deco, toppingExtra: t.topExtra,
+      total: t.total, anticipo: t.abono, comprobantes: payIds.slice(), abonoRequerido: t.requerido,
+      notas: form.notas.value.trim()
+    };
+  }
+  function validate(o){
+    if (!o.cliente) return ["cliente","Escribe el nombre del cliente."];
+    if (o.telefono.length !== 8) return ["telefono","El tel\u00e9fono debe tener 8 d\u00edgitos."];
+    if (!o.fecha) return ["fecha","Elige la fecha de entrega."];
+    if (!o.hora) return ["hH","Elige la hora de entrega."];
+    if (!o.producto) return ["producto","Elige la forma y el tama\u00f1o del queque."];
+    return null;
+  }
+
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    if (!db){ toast("Sin conexi\u00f3n: el pedido no se guard\u00f3."); return; }
+    if (uploading){ toast("Espera a que terminen de subir las fotos."); return; }
+    const o = readForm(); const bad = validate(o);
+    if (bad){ toast(bad[1]); form[bad[0]].focus(); if (bad[0] === "telefono") form.telefono.classList.add("bad"); return; }
+    const btn = $("#saveBtn"); btn.disabled = true;
+    try{
+      if (editingId){
+        o.updatedAt = Date.now();
+        await db.collection("orders").doc(editingId).update(o);
+        toast("Pedido actualizado");
+      } else {
+        o.status = "pendiente"; o.createdAt = Date.now();
+        await db.collection("orders").add(o);
+        toast("Pedido guardado");
+      }
+      resetForm(); window.scrollTo(0,0); form.cliente.focus();
+    }catch(err){
+      toast(err && err.code === "quota_exceeded" ? "La base de datos est\u00e1 llena. Borra pedidos viejos." : "No se pudo guardar. Intenta de nuevo.");
+    }finally{ btn.disabled = false; }
+  });
+
+  function loadIntoForm(o){
+    resetForm(); editingId = o.id;
+    form.cliente.value = o.cliente||"";
+    const d = digits(o.telefono); form.telefono.value = d.length > 4 ? d.slice(0,4)+" "+d.slice(4) : d;
+    $$('input[name=origen]').forEach(r => r.checked = r.value === o.origen);
+    form.fecha.value = o.fecha||""; setHora(o.hora);
+    $$('input[name=entrega]').forEach(r => r.checked = r.value === o.entrega);
+    form.direccion.value = o.direccion||"";
+    if (o.producto){
+      const k = prodKey(o.producto);
+      if (!catalog.productos.some(p => prodKey(p) === k)){
+        $("#prodSel").insertAdjacentHTML("beforeend", `<option value="${esc(k)}">${esc(prodLabel(o.producto))} (ya no est\u00e1 en el cat\u00e1logo)</option>`);
+        catalog = Object.assign({}, catalog, {productos: catalog.productos.concat(o.producto)});
+      }
+      $("#prodSel").value = k;
+    }
+    form.cantidad.value = o.cantidad || 1;
+    $$('input[name=tipo]').forEach(r => r.checked = r.value === o.tipo);
+    if (o.sabor && !$$('input[name=sabor]').some(r => r.value === o.sabor))
+      $("#saborSeg").insertAdjacentHTML("beforeend", `<label><input type="radio" name="sabor" value="${esc(o.sabor)}"><span>${esc(o.sabor)}</span></label>`);
+    $$('input[name=sabor]').forEach(r => r.checked = r.value === o.sabor);
+    setRelleno(o.relleno); setTopping(o.topping); toggleOtros();
+    form.mensaje.value = o.mensaje || o.dedicatoria || ""; form.decoracion.value = o.decoracion||"";
+    $$("#extrasBox .ex").forEach(row => {
+      const cb = row.querySelector("input[type=checkbox]"); const e = catalog.extras[cb.dataset.i];
+      const s = (o.extras||[]).find(x => x.nombre === e.nombre);
+      cb.checked = !!s; row.querySelector(".exq").disabled = !s; if (s) row.querySelector(".exq").value = s.cantidad;
+    });
+    form.decoEspecial.value = o.decoEspecial || "";
+    form.anticipo.value = o.anticipo || ""; form.notas.value = o.notas||"";
+    refIds = (o.refImgs||[]).slice(); payIds = (o.comprobantes||[]).slice();
+    $("#editBanner").hidden = false; $("#formTitle").textContent = "Editar pedido";
+    $("#saveBtn").textContent = "Guardar cambios";
+    renderAllPhotos(); toggleDir(); updateTotals(); showView("form"); window.scrollTo(0,0);
+  }
+
+  /* ---------- Kitchen ---------- */
+  function tickClock(){
+    const d = new Date();
+    $("#clock").innerHTML = `${fmt12html(pad(d.getHours()) + ":" + pad(d.getMinutes()))}<small>${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}</small>`;
+  }
+  setInterval(() => { tickClock(); if (!$("#view-kitchen").hidden) renderBoard(); }, 30000);
+  tickClock();
+
+  $$("#dayChips button").forEach(b => b.addEventListener("click", () => {
+    dayFilter = b.dataset.f;
+    $$("#dayChips button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    renderBoard();
+  }));
+
+  function dayLabel(fecha){
+    if (!fecha) return "";
+    if (fecha === todayStr()) return "Hoy";
+    if (fecha === todayStr(new Date(Date.now()+864e5))) return "Ma\u00f1ana";
+    const [y,m,d] = fecha.split("-").map(Number); const dt = new Date(y,m-1,d);
+    return `${DAYS[dt.getDay()]} ${d} ${MONTHS[m-1]}`;
+  }
+  function inFilter(o){
+    const now = new Date(); const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(); const day = 864e5;
+    if (o.dueAt < start) return true;
+    if (dayFilter === "hoy") return o.dueAt < start + day;
+    if (dayFilter === "manana") return o.dueAt >= start + day && o.dueAt < start + 2*day;
+    if (dayFilter === "semana") return o.dueAt < start + 7*day;
+    return true;
+  }
+  function productLine(o){
+    if (o.producto) return `${(o.cantidad||1) > 1 ? `<span class="q">${esc(o.cantidad)}\u00d7</span> ` : ""}${esc(prodLabel(o.producto))}`;
+    if (o.items && o.items.length) return o.items.map(it => `<span class="q">${esc(it.cantidad||1)}\u00d7</span> ${esc(it.producto)}${it.tamano ? " \u00b7 "+esc(it.tamano) : ""}`).join("<br>");
+    return "Sin producto";
+  }
+  function payTag(o){
+    const saldo = Math.max((o.total||0)-(o.anticipo||0),0);
+    if (o.abonoRequerido && (o.anticipo||0) < ABONO_MIN) return `<span class="tag warn">Falta abono</span>`;
+    if (saldo > 0) return `<span class="tag">Cobrar ${esc(crc(saldo))}</span>`;
+    return o.total ? `<span class="tag">Pagado</span>` : "";
+  }
+  function cardHTML(o){
+    const now = Date.now();
+    const late = o.status !== "listo" && o.dueAt < now;
+    const soon = !late && o.status !== "listo" && o.dueAt - now < 2*3600e3;
+    const spec = [o.tipo, o.sabor].filter(Boolean).join(" \u00b7 ");
+    const spec2 = [o.relleno && "Relleno: " + o.relleno, o.topping && "Topping: " + o.topping].filter(Boolean).join(" \u00b7 ");
+    const extras = (o.extras||[]).map(e => (e.cantidad > 1 ? e.cantidad + "\u00d7 " : "") + e.nombre).join(", ");
+    const msg = o.mensaje || o.dedicatoria;
+    const img = (o.refImgs||[])[0];
+    return `<button class="card${late?" late":""}${!firstLoad && !seen.has(o.id) ? " fresh":""}" data-id="${esc(o.id)}">
+      <div class="when"><span class="time">${fmt12html(o.hora)}</span><span class="day">${esc(dayLabel(o.fecha))}</span>
+        ${late ? '<span class="tag late">Atrasado</span>' : soon ? '<span class="tag soon">Pronto</span>' : ""}</div>
+      <div class="body"><div>
+        <div class="prod">${productLine(o)}</div>
+        ${spec ? `<div class="spec">${esc(spec)}</div>` : ""}
+        ${spec2 ? `<div class="spec2">${esc(spec2)}</div>` : ""}
+        ${extras ? `<div class="spec2">Extras: ${esc(extras)}</div>` : ""}
+      </div>${img ? `<img class="thumb" src="${esc(blob(img))}" data-pid="${esc(img)}" alt="Referencia">` : ""}</div>
+      ${msg ? `<div class="ded">\u201c${esc(msg)}\u201d</div>` : ""}
+      ${o.decoracion ? `<div class="ded deco">${esc(o.decoracion)}</div>` : ""}
+      <div class="meta"><span>${esc(o.cliente)}</span>${o.entrega === "Env\u00edo" ? '<span class="tag">Env\u00edo</span>' : ""}${payTag(o)}</div>
+    </button>`;
+  }
+  $("#colTabs").addEventListener("click", e => {
+    const b = e.target.closest("[data-col]"); if (!b) return;
+    $("#board").dataset.show = b.dataset.col;
+    $$("#colTabs button").forEach(x => x.setAttribute("aria-selected", String(x === b)));
+  });
+  function renderBoard(){
+    renderWeb();
+    ["pendiente","preparacion","listo"].forEach(s => {
+      const list = orders.filter(o => o.status === s && inFilter(o)).sort((a,b) => a.dueAt - b.dueAt);
+      $("#n-"+s).textContent = list.length; $("#t-"+s).textContent = list.length;
+      $("#l-"+s).innerHTML = list.length ? list.map(cardHTML).join("") : `<p class="empty">${s === "pendiente" ? "No hay pedidos por hacer en este rango." : "Nada aqu\u00ed por ahora."}</p>`;
+    });
+  }
+  $(".board").addEventListener("click", e => {
+    const b = e.target.closest("[data-webretry]");
+    if (b){ b.disabled = true; b.textContent = "Revisando\u2026"; refreshWeb(true); return; }
+    const c = e.target.closest(".card"); if (!c) return;
+    const w = webPending().find(x => x.id === c.dataset.id); if (w){ openWebSheet(w); return; }
+    const o = orders.find(x => x.id === c.dataset.id); if (o) openSheet(o);
+  });
+
+  /* ---------- WhatsApp confirmation ---------- */
+  function desgloseInicial(o){
+    if (Array.isArray(o.desglose) && o.desglose.length) return o.desglose.map(l => ({label:l.label, monto:Number(l.monto)||0}));
+    const lines = [];
+    if (o.producto) lines.push({label:"Queque " + prodLabel(o.producto) + ((o.cantidad||1) > 1 ? " \u00d7" + o.cantidad : ""), monto:(Number(o.producto.precio)||0) * (o.cantidad||1)});
+    (o.extras||[]).forEach(e => lines.push({label:e.nombre + (e.cantidad > 1 ? " \u00d7" + e.cantidad : ""), monto:(Number(e.precio)||0) * (e.cantidad||1)}));
+    (o.extrasSinPrecio||[]).forEach(n => { if (norm(n) !== norm("Decoraci\u00f3n especial")) lines.push({label:n, monto:0}); });
+    const nTop = o.topping ? o.topping.split(/,\s*/).filter(Boolean).length : 0;
+    if (o.toppingExtra || nTop > 1) lines.push({label:`Topping adicional${nTop > 2 ? "es (" + (nTop - 1) + ")" : ""}`, monto:Number(o.toppingExtra)||0});
+    lines.push({label:"Decoraci\u00f3n especial", monto:Number(o.decoEspecial)||0});
+    return lines;
+  }
+  function confirmBlockHTML(o){
+    const lines = desgloseInicial(o);
+    return `<div class="confirm" id="confirmBox">
+      <h3 style="margin:0 0 4px;font-size:19px">Confirmaci\u00f3n por WhatsApp</h3>
+      <p class="hint" style="margin:0 0 10px">Revisa o cambia los montos. El total se suma solo.</p>
+      ${lines.map((l,i) => `<div class="cl"><input type="text" class="cl-l" value="${esc(l.label)}" aria-label="Concepto"><input type="number" class="cl-m" min="0" step="100" value="${esc(l.monto)}" aria-label="Monto"></div>`).join("")}
+      <button type="button" class="btn ghost small" data-addline style="margin:2px 0 10px">+ Agregar cargo</button>
+      <div class="totals" id="confTotals"></div>
+      <label class="f" style="margin-top:10px"><span class="lbl">Abono recibido (\u20a1)</span><input type="number" id="confAbono" min="0" step="100" value="${esc(o.anticipo||0)}"></label>
+      <a class="btn primary" id="waBtn" target="_blank" rel="noopener" style="width:100%">Confirmar y enviar por WhatsApp</a>
+      <p class="hint" id="waHint" style="margin:8px 0 0"></p>
+    </div>`;
+  }
+  function readConfirm(){
+    const lines = $$("#confirmBox .cl").map(r => ({label:r.querySelector(".cl-l").value.trim(), monto:Number(r.querySelector(".cl-m").value)||0})).filter(l => l.label);
+    const total = lines.reduce((a,l) => a + l.monto, 0);
+    const abono = Number($("#confAbono").value)||0;
+    return {lines, total, abono, saldo:Math.max(total - abono, 0)};
+  }
+  function waMessage(o, c){
+    const det = [
+      `\u2022 Entrega: ${dayLabel(o.fecha)} a las ${fmt12(o.hora)} (retiro en el local)`,
+      o.producto ? `\u2022 ${prodLabel(o.producto)}${o.tipo ? ", " + o.tipo.toLowerCase() : ""}${o.sabor ? ", sabor " + o.sabor.toLowerCase() : ""}` : "",
+      o.relleno ? `\u2022 Relleno: ${o.relleno}` : "",
+      o.topping ? `\u2022 Topping: ${o.topping}` : "",
+      (o.mensaje||o.dedicatoria) ? `\u2022 Mensaje: "${o.mensaje||o.dedicatoria}"` : "",
+      o.decoracion ? `\u2022 Decoraci\u00f3n: ${o.decoracion}` : ""
+    ].filter(Boolean).map(l => l.replace(/Otro:\s*/g, ""));
+    const des = c.lines.filter(l => l.monto > 0).map(l => `\u2022 ${l.label}: ${crc(l.monto)}`);
+    return [
+      `\u00a1Hola ${(o.cliente||"").split(" ")[0]}! Su pedido en Pasteler\u00eda Marlen est\u00e1 *confirmado*.`, "",
+      "*Detalle del queque*", ...det, "",
+      "*Desglose*", ...des,
+      `*Total confirmado: ${crc(c.total)}*`,
+      `Abono recibido: ${crc(c.abono)}`,
+      `*Saldo al retirar: ${crc(c.saldo)}*`, "",
+      "\u00a1Muchas gracias por su compra!"
+    ].join("\n");
+  }
+  function wireConfirm(o, onSend){
+    const box = $("#confirmBox"); if (!box) return;
+    const tel = String(o.telefono||"").replace(/\D/g,"");
+    const update = () => {
+      const c = readConfirm();
+      $("#confTotals").innerHTML = `<div class="grand"><span>Total confirmado</span><b>${esc(crc(c.total))}</b></div><div><span>Abono</span><b>\u2212 ${esc(crc(c.abono))}</b></div><div class="saldo"><span>Saldo al retirar</span><b>${esc(crc(c.saldo))}</b></div>`;
+      const a = $("#waBtn");
+      if (tel.length === 8){ a.href = "https:\/\/wa.me/506" + tel + "?text=" + encodeURIComponent(waMessage(o, c)); a.removeAttribute("aria-disabled"); $("#waHint").textContent = "Se guarda el precio confirmado y se abre WhatsApp con el mensaje listo para enviar."; }
+      else { a.removeAttribute("href"); a.setAttribute("aria-disabled","true"); $("#waHint").textContent = "Este pedido no tiene un tel\u00e9fono de 8 d\u00edgitos. Corr\u00edgelo en Editar pedido."; }
+    };
+    box.addEventListener("input", update);
+    box.addEventListener("click", e => {
+      if (e.target.closest("[data-addline]")){
+        e.target.closest("[data-addline]").insertAdjacentHTML("beforebegin", `<div class="cl"><input type="text" class="cl-l" placeholder="Concepto" aria-label="Concepto"><input type="number" class="cl-m" min="0" step="100" value="0" aria-label="Monto"></div>`);
+        update(); return;
+      }
+      if (e.target.closest("#waBtn") && tel.length === 8) onSend(readConfirm());
+    });
+    update();
+  }
+  function confirmData(c){
+    const deco = c.lines.find(l => norm(l.label) === norm("Decoraci\u00f3n especial"));
+    return {desglose:c.lines, total:c.total, anticipo:c.abono, decoEspecial: deco ? deco.monto : 0, precioConfirmado:true, confirmadoEn:Date.now()};
+  }
+
+  /* ---------- Detail sheet ---------- */
+  const sheet = $("#sheet"), zoom = $("#zoom");
+  function openSheet(o){
+    const saldo = Math.max((o.total||0)-(o.anticipo||0),0);
+    const moves = ["pendiente","preparacion","listo","entregado"].filter(s => s !== o.status)
+      .map(s => `<button class="btn st-${s}" data-move="${s}">${s === "entregado" ? "Marcar entregado" : "Mover a " + STATUS[s].toLowerCase()}</button>`).join("");
+    const extras = (o.extras||[]).map(e => `${esc(e.cantidad)}\u00d7 ${esc(e.nombre)} (${esc(crc(e.precio*e.cantidad))})`).join("<br>");
+    const imgs = (o.refImgs||[]).map((id,i) => `<figure><img src="${esc(blob(id))}" data-pid="${esc(id)}" alt="Referencia ${i+1}" data-zoom><figcaption>Referencia</figcaption></figure>`).join("")
+      + (o.comprobantes||[]).map((id,i) => `<figure><img src="${esc(blob(id))}" data-pid="${esc(id)}" alt="Comprobante ${i+1}" data-zoom><figcaption>Comprobante</figcaption></figure>`).join("");
+    const tel = digits(o.telefono);
+    $("#sheetBody").innerHTML = `
+      <h2>${esc(o.cliente)}</h2>
+      <p class="sub">${esc(dayLabel(o.fecha))} a las ${esc(fmt12(o.hora))} \u00b7 ${esc(STATUS[o.status]||"")}</p>
+      <dl>
+        <dt>Queque</dt><dd>${productLine(o)}</dd>
+        ${o.tipo || o.sabor ? `<dt>Tipo y sabor</dt><dd>${esc([o.tipo,o.sabor].filter(Boolean).join(" \u00b7 "))}</dd>` : ""}
+        ${o.relleno ? `<dt>Relleno</dt><dd>${esc(o.relleno)}</dd>` : ""}
+        ${o.topping ? `<dt>Topping</dt><dd>${esc(o.topping)}</dd>` : ""}
+        ${(o.mensaje||o.dedicatoria) ? `<dt>Mensaje</dt><dd>\u201c${esc(o.mensaje||o.dedicatoria)}\u201d</dd>` : ""}
+        ${o.decoracion ? `<dt>Decoraci\u00f3n</dt><dd>${esc(o.decoracion)}</dd>` : ""}
+        ${extras ? `<dt>Extras</dt><dd>${extras}</dd>` : ""}
+        ${o.toppingExtra ? `<dt>Toppings extra</dt><dd>${esc(crc(o.toppingExtra))}</dd>` : ""}
+        ${o.decoEspecial ? `<dt>Deco. especial</dt><dd>${esc(crc(o.decoEspecial))}</dd>` : ""}
+        <dt>Entrega</dt><dd>${esc(o.entrega)}${o.direccion ? ": " + esc(o.direccion) : ""}</dd>
+        ${tel ? `<dt>Tel\u00e9fono</dt><dd><a href="tel:${esc(tel)}" style="color:inherit">${esc(tel.slice(0,4)+" "+tel.slice(4))}</a> \u00b7 <a href="https:\/\/wa.me/506${esc(tel)}" target="_blank" rel="noopener" style="color:inherit">WhatsApp</a></dd>` : ""}
+        <dt>Pago</dt><dd>Total ${esc(crc(o.total))} \u00b7 Abono ${esc(crc(o.anticipo))} \u00b7 Saldo ${esc(crc(saldo))}</dd>
+        ${o.notas ? `<dt>Notas</dt><dd>${esc(o.notas)}</dd>` : ""}
+        <dt>Origen</dt><dd>${esc(o.origen||"")}</dd>
+      </dl>
+      ${imgs ? `<div class="imgs">${imgs}</div>` : ""}
+      ${(o.refUrls||[]).length || (o.compUrls||[]).length ? `<p class="links">${(o.refUrls||[]).map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">Ver referencia</a>`).join("")}${(o.compUrls||[]).map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">Ver comprobante</a>`).join("")}</p>` : ""}
+      ${o.precioConfirmado ? `<p class="hint" style="color:var(--mint);font-weight:600">Precio confirmado y enviado al cliente.</p>` : ""}
+      ${confirmBlockHTML(o)}
+      <div class="moves">${moves}</div>
+      <div class="foot">
+        <button class="btn ghost small" data-act="edit">Editar pedido</button>
+        <button class="btn danger small" data-act="del">Cancelar pedido</button>
+        <button class="btn ghost small" data-act="close">Cerrar</button>
+      </div>`;
+    $("#sheetBody").onclick = async e => {
+      const z = e.target.closest("[data-zoom]");
+      if (z){ zoom.querySelector("img").src = z.src; zoom.showModal(); return; }
+      const b = e.target.closest("button"); if (!b) return;
+      if (b.dataset.move){
+        b.disabled = true;
+        try{ await db.collection("orders").doc(o.id).update({status:b.dataset.move, updatedAt:Date.now()}); sheet.close();
+          toast(b.dataset.move === "entregado" ? "Pedido entregado" : "Movido a " + STATUS[b.dataset.move].toLowerCase()); }
+        catch(err){ toast("No se pudo cambiar. Intenta de nuevo."); b.disabled = false; }
+      } else if (b.dataset.act === "edit"){ sheet.close(); loadIntoForm(o); }
+      else if (b.dataset.act === "del"){
+        if (b.dataset.confirm !== "1"){ b.dataset.confirm = "1"; b.textContent = "Toca otra vez para confirmar"; return; }
+        try{
+          await db.collection("orders").doc(o.id).delete(); sheet.close(); toast("Pedido cancelado");
+          if (assets) (o.refImgs||[]).concat(o.comprobantes||[]).forEach(id => assets.delete(id).catch(()=>{}));
+        }catch(err){ toast("No se pudo cancelar. Intenta de nuevo."); }
+      } else if (b.dataset.act === "close") sheet.close();
+    };
+    wireConfirm(o, async c => {
+      try{ await db.collection("orders").doc(o.id).update(confirmData(c)); toast("Precio confirmado guardado"); }
+      catch(err){ toast("Se abri\u00f3 WhatsApp, pero no se pudo guardar el precio."); }
+    });
+    sheet.showModal();
+  }
+  sheet.addEventListener("click", e => { if (e.target === sheet) sheet.close(); });
+  zoom.addEventListener("click", () => zoom.close());
+
+  /* ---------- Prices editor ---------- */
+  function prodRow(p={}){ const c = p.categoria || (p.porciones ? categoriaDefault(p) : "Peque\u00f1o"); return `<tr><td><input type="text" class="pf" value="${esc(p.forma)}" aria-label="Forma"></td><td><input type="number" class="pp" min="1" value="${esc(p.porciones)}" aria-label="Porciones"></td><td><select class="pc" aria-label="Tama\u00f1o">${CATS.map(x => `<option${x === c ? " selected" : ""}>${x}</option>`).join("")}</select></td><td><input type="number" class="pr" min="0" step="100" value="${esc(p.precio)}" aria-label="Precio"></td><td class="rmc"><button type="button" class="rm" aria-label="Quitar">\u00d7</button></td></tr>`; }
+  function extraRow(e={}){ return `<tr><td><input type="text" class="en" value="${esc(e.nombre)}" aria-label="Extra"></td><td><input type="number" class="ep" min="0" step="100" value="${esc(e.precio)}" aria-label="Precio"></td><td class="rmc"><button type="button" class="rm" aria-label="Quitar">\u00d7</button></td></tr>`; }
+  function renderPrices(){
+    $("#pProd").innerHTML = catalog.productos.map(prodRow).join("");
+    $("#pExtra").innerHTML = catalog.extras.map(extraRow).join("");
+    $("#pSabores").value = catalog.sabores.join("\n");
+    $("#pRellenos").value = catalog.rellenos.join("\n");
+    $("#pToppings").value = catalog.toppings.join("\n");
+    const te = catalog.toppingExtra || {};
+    $("#tePeq").value = te["Peque\u00f1o"] ?? ""; $("#teMed").value = te["Mediano"] ?? ""; $("#teGra").value = te["Grande"] ?? "";
+    pricesDirty = false;
+  }
+  $("#view-prices").addEventListener("input", () => pricesDirty = true);
+  $("#view-prices").addEventListener("click", e => { if (e.target.classList.contains("rm")){ e.target.closest("tr").remove(); pricesDirty = true; } });
+  $("#addProd").addEventListener("click", () => { $("#pProd").insertAdjacentHTML("beforeend", prodRow()); pricesDirty = true; $$("#pProd .pf").pop().focus(); });
+  $("#addExtra").addEventListener("click", () => { $("#pExtra").insertAdjacentHTML("beforeend", extraRow()); pricesDirty = true; $$("#pExtra .en").pop().focus(); });
+  $("#resetPrices").addEventListener("click", renderPrices);
+  const lines = s => s.split("\n").map(x => x.trim()).filter(Boolean);
+  $("#savePrices").addEventListener("click", async () => {
+    if (!db){ toast("Sin conexi\u00f3n: no se guard\u00f3."); return; }
+    const productos = $$("#pProd tr").map(r => ({forma:r.querySelector(".pf").value.trim(), porciones:Number(r.querySelector(".pp").value)||0, categoria:r.querySelector(".pc").value, precio:Number(r.querySelector(".pr").value)||0})).filter(p => p.forma && p.porciones);
+    const toppingExtra = {"Peque\u00f1o":Number($("#tePeq").value)||0, "Mediano":Number($("#teMed").value)||0, "Grande":Number($("#teGra").value)||0};
+    const extras = $$("#pExtra tr").map(r => ({nombre:r.querySelector(".en").value.trim(), precio:Number(r.querySelector(".ep").value)||0})).filter(e => e.nombre);
+    const keys = new Set(); for (const p of productos){ const k = prodKey(p); if (keys.has(k)){ toast(`"${prodLabel(p)}" est\u00e1 repetido.`); return; } keys.add(k); }
+    const data = {productos, extras, toppingExtra, sabores:lines($("#pSabores").value), rellenos:lines($("#pRellenos").value), toppings:lines($("#pToppings").value), updatedAt:Date.now()};
+    const b = $("#savePrices"); b.disabled = true;
+    try{ await db.doc("config/catalogo").set(data); pricesDirty = false; toast("Precios guardados"); }
+    catch(err){ toast(err && err.code === "invalid_argument" ? "No tienes permiso para cambiar precios." : "No se pudo guardar. Intenta de nuevo."); }
+    finally{ b.disabled = false; }
+  });
+
+  /* ---------- Sound & fullscreen ---------- */
+  $("#soundBtn").addEventListener("click", e => {
+    soundOn = !soundOn;
+    e.currentTarget.setAttribute("aria-pressed", String(soundOn));
+    e.currentTarget.textContent = soundOn ? "Sonido encendido" : "Sonido apagado";
+    if (soundOn){ try{ audioCtx = audioCtx || new (window.AudioContext||window.webkitAudioContext)(); audioCtx.resume(); chime(); }catch(err){} }
+  });
+  function chime(){
+    if (!soundOn || !audioCtx) return;
+    [0, .18].forEach((t,i) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.frequency.value = i ? 1046 : 784; o.type = "sine";
+      g.gain.setValueAtTime(.0001, audioCtx.currentTime+t);
+      g.gain.exponentialRampToValueAtTime(.3, audioCtx.currentTime+t+.02);
+      g.gain.exponentialRampToValueAtTime(.0001, audioCtx.currentTime+t+.5);
+      o.connect(g).connect(audioCtx.destination); o.start(audioCtx.currentTime+t); o.stop(audioCtx.currentTime+t+.55);
+    });
+  }
+  $("#fsBtn").addEventListener("click", async () => {
+    try{ if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
+    catch(err){ toast("Usa la pantalla completa del navegador (F11)."); }
+  });
+
+  /* ---------- Web orders (Tally -> Google Sheet) ---------- */
+  const SHEET_ID = "1cRGO7u-sfN-p_K8T5fHDPCZOVUk0SJQmxxYv2wa3Hcc";
+  const DRIVE = "Google Drive", DRIVE_TOOL = "download_file_content";
+  const SHEET_INPUT = {fileId: SHEET_ID, exportMimeType: "text/csv"};
+  let mcp = null, webRows = [], webDone = {}, webDoneLoaded = false, webSeen = new Set(), webFirst = true;
+  let webStatus = {state:"loading", text:"Conectando con el formulario\u2026"};
+  const norm = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
+
+  function parseCSV(text){
+    const rows = []; let row = [], f = "", q = false;
+    for (let i = 0; i < text.length; i++){
+      const c = text[i];
+      if (q){ if (c === '"'){ if (text[i+1] === '"'){ f += '"'; i++; } else q = false; } else f += c; }
+      else if (c === '"') q = true;
+      else if (c === ","){ row.push(f); f = ""; }
+      else if (c === "\n" || c === "\r"){ if (c === "\r" && text[i+1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+      else f += c;
+    }
+    if (f !== "" || row.length){ row.push(f); rows.push(row); }
+    return rows;
+  }
+  function decodeB64(s){
+    const bin = atob(s); const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+  function sheetFromRows(rows){
+    if (!Array.isArray(rows)) throw {message: (rows && rows.error) || "No se pudo leer la hoja del formulario."};
+    if (!rows.length) return [];
+    const head = rows[0].map(h => norm(h));
+    // A question that Tally recreates keeps its title but may get a second column; read every matching column.
+    const col = (prefix, exact) => head.map((h,i) => (exact ? h === norm(prefix) : h.startsWith(norm(prefix)) && !h.includes("(")) ? i : -1).filter(i => i >= 0);
+    const C = {
+      id: col("Submission ID", true), at: col("Submitted at", true), nombre: col("Nombre"), tel: col("Telefono"),
+      fecha: col("Fecha de entrega"), hora: col("Hora de entrega"), prod: col("Forma y tama"), tipo: col("Tipo de queque"),
+      sabor: col("Sabor", true), relleno: col("Relleno", true), dRelleno: col("Detalle del relleno"),
+      topping: col("Topping"), dTopping: col("Detalle del topping"), mensaje: col("Mensaje"), deco: col("Especificaciones"),
+      img: col("Imagen de referencia"), extras: col("Extras", true), monto: head.map((h,i) => h.startsWith(norm("Monto del abono")) ? i : -1).filter(i => i >= 0), comp: col("Comprobante"), notas: col("Notas")
+    };
+    const get = (r, k) => { for (const i of C[k]) { const v = (r[i] || "").trim(); if (v) return v; } return ""; };
+    return rows.slice(1).filter(r => get(r,"id")).map(r => {
+      const o = {}; Object.keys(C).forEach(k => o[k] = get(r,k)); return o;
+    });
+  }
+  const urlsIn = s => (String(s||"").match(/https?:\/\/[^\s,)"']+/g) || []);
+
+  function webToOrder(s){
+    const m = s.prod.match(/^(.*?)\s*\u00b7\s*(\d+)/);
+    const forma = m ? m[1].trim() : s.prod, porciones = m ? Number(m[2]) : 0;
+    const p = catalog.productos.find(x => norm(x.forma) === norm(forma) && Number(x.porciones) === porciones);
+    const producto = p ? {forma:p.forma, porciones:p.porciones, precio:Number(p.precio)||0, categoria:p.categoria || categoriaDefault(p)}
+                       : {forma, porciones, precio:0, categoria: categoriaDefault({porciones})};
+    const otro = (val, det) => norm(val) === norm(OTROS) ? (det ? "Otro: " + det : "Otro") : val;
+    const tops = s.topping ? s.topping.split(/,\s*/).filter(Boolean).map(t => otro(t, s.dTopping)) : [];
+    const exNames = s.extras ? s.extras.split(/,\s*/).filter(Boolean) : [];
+    const extras = [], sinPrecio = [];
+    exNames.forEach(n => {
+      const e = catalog.extras.find(x => norm(x.nombre) === norm(n));
+      if (e) extras.push({nombre:e.nombre, precio:Number(e.precio)||0, cantidad:1}); else sinPrecio.push(n);
+    });
+    const topUnit = Number((catalog.toppingExtra||{})[producto.categoria]) || 0;
+    const toppingExtra = Math.max(tops.length - 1, 0) * topUnit;
+    const total = producto.precio + extras.reduce((a,e) => a + e.precio, 0) + toppingExtra;
+    const anticipo = Number(String(s.monto).replace(/[^\d.]/g,"")) || 0;
+    const refUrls = urlsIn(s.img), compUrls = urlsIn(s.comp);
+    const personalizada = !!s.deco || refUrls.length > 0 || sinPrecio.length > 0;
+    let tel = String(s.tel).replace(/\D/g,""); if (tel.length === 11 && tel.startsWith("506")) tel = tel.slice(3);
+    const hora = parseHora(s.hora) || s.hora;
+    const [y,mo,d] = (s.fecha||"").split("-").map(Number); const [hh,mm] = (hora||"0:0").split(":").map(Number);
+    return {
+      id: "web:" + s.id, webId: s.id, enviadoEn: s.at,
+      cliente: s.nombre, telefono: tel, origen: "Formulario web", fecha: s.fecha, hora,
+      dueAt: new Date(y||2000, (mo||1)-1, d||1, hh||0, mm||0).getTime(),
+      entrega: "Retira", direccion: "", producto, cantidad: 1, sinCatalogo: !p,
+      tipo: s.tipo, sabor: s.sabor, relleno: otro(s.relleno, s.dRelleno), topping: tops.join(", "),
+      mensaje: s.mensaje, decoracion: s.deco, refImgs: [], refUrls, extras, extrasSinPrecio: sinPrecio,
+      decoEspecial: 0, toppingExtra, total, anticipo, comprobantes: [], compUrls,
+      abonoRequerido: total > ABONO_UMBRAL || personalizada, notas: s.notas
+    };
+  }
+  function webPending(){
+    if (!webDoneLoaded) return [];
+    return webRows.filter(s => !webDone[s.id]).map(webToOrder).sort((a,b) => a.dueAt - b.dueAt);
+  }
+  function setWebStatus(state, text){ webStatus = {state, text}; renderWeb(); }
+  function renderWeb(){
+    const list = webPending();
+    $("#n-web").textContent = list.length; $("#t-web").textContent = list.length;
+    const s = $("#webSync");
+    s.className = "sync" + (webStatus.state === "err" ? " err" : "");
+    s.innerHTML = esc(webStatus.text) + `<br><button class="btn ghost small" data-webretry>Revisar ahora</button>`;
+    $("#l-web").innerHTML = list.length ? list.map(o => cardHTML(o).replace('<div class="meta">', '<div class="meta"><span class="tag web">Web</span>')).join("")
+      : (webStatus.state === "ok" ? `<p class="empty">No hay pedidos nuevos del formulario.</p>` : "");
+    list.forEach(o => webSeen.add(o.id));
+  }
+  function onSheet(rowsIn, at){
+    let rows;
+    try{ rows = sheetFromRows(rowsIn); }catch(err){ setWebStatus("err", (err && err.message) || "No se pudo leer la hoja del formulario."); return; }
+    const before = new Set(webRows.map(r => r.id));
+    webRows = rows;
+    const nuevos = rows.filter(r => !before.has(r.id) && !webDone[r.id]);
+    if (!webFirst && nuevos.length) chime();
+    webFirst = false;
+    const d = new Date(at || Date.now());
+    webStatus = {state:"ok", text:`\u00daltima revisi\u00f3n: ${fmt12(pad(d.getHours()) + ":" + pad(d.getMinutes()))} \u00b7 se revisa cada 20 segundos`};
+    renderWeb();
+  }
+  async function refreshWeb(){ await refreshAll(); }
+
+  function openWebSheet(o){
+    const extras = o.extras.map(e => `${esc(e.nombre)} (${esc(crc(e.precio))})`).concat(o.extrasSinPrecio.map(n => `${esc(n)} (precio por definir)`)).join("<br>");
+    const links = o.refUrls.map((u,i) => `<a href="${esc(u)}" target="_blank" rel="noopener">Ver referencia${o.refUrls.length > 1 ? " " + (i+1) : ""}</a>`)
+      .concat(o.compUrls.map((u,i) => `<a href="${esc(u)}" target="_blank" rel="noopener">Ver comprobante${o.compUrls.length > 1 ? " " + (i+1) : ""}</a>`)).join("");
+    const saldo = Math.max(o.total - o.anticipo, 0);
+    const tel = o.telefono;
+    $("#sheetBody").innerHTML = `
+      <h2>${esc(o.cliente)}</h2>
+      <p class="sub">Pedido del formulario \u00b7 para ${esc(dayLabel(o.fecha))} a las ${esc(fmt12(o.hora))}</p>
+      ${o.sinCatalogo ? `<p class="notice">"${esc(prodLabel(o.producto))}" no est\u00e1 en Precios. El total no incluye el queque; corr\u00edgelo despu\u00e9s en Editar pedido.</p>` : ""}
+      <dl>
+        <dt>Queque</dt><dd>${esc(prodLabel(o.producto))}</dd>
+        <dt>Tipo y sabor</dt><dd>${esc([o.tipo,o.sabor].filter(Boolean).join(" \u00b7 "))}</dd>
+        ${o.relleno ? `<dt>Relleno</dt><dd>${esc(o.relleno)}</dd>` : ""}
+        ${o.topping ? `<dt>Topping</dt><dd>${esc(o.topping)}${o.toppingExtra ? ` (+${esc(crc(o.toppingExtra))})` : ""}</dd>` : ""}
+        ${o.mensaje ? `<dt>Mensaje</dt><dd>\u201c${esc(o.mensaje)}\u201d</dd>` : ""}
+        ${o.decoracion ? `<dt>Decoraci\u00f3n</dt><dd>${esc(o.decoracion)}</dd>` : ""}
+        ${extras ? `<dt>Extras</dt><dd>${extras}</dd>` : ""}
+        ${tel ? `<dt>Tel\u00e9fono</dt><dd><a href="https:\/\/wa.me/506${esc(tel)}" target="_blank" rel="noopener" style="color:inherit">${esc(tel.slice(0,4)+" "+tel.slice(4))} \u00b7 WhatsApp</a></dd>` : ""}
+        <dt>Total estimado</dt><dd>${esc(crc(o.total))}</dd>
+        <dt>Abono enviado</dt><dd>${esc(crc(o.anticipo))} \u00b7 Saldo ${esc(crc(saldo))}${o.abonoRequerido && o.anticipo < ABONO_MIN ? ` \u00b7 <span style="color:var(--danger)">falta abono m\u00ednimo de ${esc(crc(ABONO_MIN))}</span>` : ""}</dd>
+        ${o.notas ? `<dt>Notas</dt><dd>${esc(o.notas)}</dd>` : ""}
+      </dl>
+      ${links ? `<p class="links">${links}</p>` : ""}
+      ${confirmBlockHTML(o)}
+      <div class="moves"><button class="btn st-pendiente" data-web="ok">Confirmar sin enviar</button><button class="btn danger" data-web="no">Rechazar</button></div>
+      <div class="foot"><span></span><button class="btn ghost small" data-act="close">Cerrar</button></div>`;
+    $("#sheetBody").onclick = async e => {
+      const b = e.target.closest("button"); if (!b) return;
+      if (b.dataset.act === "close"){ sheet.close(); return; }
+      if (!b.dataset.web) return;
+      if (!db){ toast("Sin conexi\u00f3n."); return; }
+      if (b.dataset.web === "no" && b.dataset.confirm !== "1"){ b.dataset.confirm = "1"; b.textContent = "Toca otra vez para rechazar"; return; }
+      b.disabled = true;
+      try{
+        if (b.dataset.web === "ok"){
+          const data = Object.assign({}, o); delete data.id;
+          data.status = "pendiente"; data.createdAt = Date.now();
+          await db.collection("orders").doc("web-" + o.webId).set(data);
+          await db.doc("tally/" + o.webId).set({estado:"confirmado", orderId:"web-" + o.webId, at:Date.now()});
+          webDone[o.webId] = {estado:"confirmado"}; renderWeb();
+          toast("Pedido confirmado");
+        } else {
+          await db.doc("tally/" + o.webId).set({estado:"rechazado", at:Date.now()});
+          webDone[o.webId] = {estado:"rechazado"}; renderWeb();
+          toast("Pedido rechazado");
+        }
+        sheet.close();
+      }catch(err){ toast("No se pudo guardar. Intenta de nuevo."); b.disabled = false; }
+    };
+    wireConfirm(o, async c => {
+      try{
+        const data = Object.assign({}, o, confirmData(c)); delete data.id;
+        data.status = "pendiente"; data.createdAt = Date.now();
+        await db.collection("orders").doc("web-" + o.webId).set(data);
+        await db.doc("tally/" + o.webId).set({estado:"confirmado", orderId:"web-" + o.webId, at:Date.now()});
+        webDone[o.webId] = {estado:"confirmado"}; renderWeb();
+        toast("Pedido confirmado"); sheet.close();
+      }catch(err){ toast("Se abri\u00f3 WhatsApp, pero no se pudo guardar el pedido."); }
+    });
+    sheet.showModal();
+  }
+
+  /* ---------- Export ---------- */
+  const EXPORT_COLS = ["ID","Estado","Origen","Cliente","Tel\u00e9fono","Fecha de entrega","Hora","Forma y tama\u00f1o","Tipo","Sabor","Relleno","Topping","Mensaje","Decoraci\u00f3n","Extras","Desglose","Total (\u20a1)","Abono (\u20a1)","Saldo (\u20a1)","Precio confirmado","Notas","Fotos de referencia","Comprobantes","Creado"];
+  const csvCell = v => { const s = String(v ?? ""); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
+  function exportRow(id, o){
+    const p = o.producto;
+    const total = Number(o.total)||0, abono = Number(o.anticipo)||0;
+    const refs = (o.refImgs||[]).length + (o.refUrls||[]).length, comps = (o.comprobantes||[]).length + (o.compUrls||[]).length;
+    const c = o.createdAt ? new Date(o.createdAt) : null;
+    return [id, STATUS[o.status] || o.status || "", o.origen, o.cliente, o.telefono, o.fecha, fmt12(o.hora), p ? prodLabel(p) : "", o.tipo, o.sabor, o.relleno, o.topping,
+      o.mensaje || o.dedicatoria, o.decoracion, (o.extras||[]).map(e => e.nombre + (e.cantidad > 1 ? " \u00d7" + e.cantidad : "")).join(", "),
+      (o.desglose||[]).map(l => l.label + ": " + l.monto).join("; "), total, abono, Math.max(total - abono, 0), o.precioConfirmado ? "S\u00ed" : "No", o.notas,
+      (o.refUrls||[]).join(" ") || (refs ? refs + " en la app" : ""), (o.compUrls||[]).join(" ") || (comps ? comps + " en la app" : ""),
+      c ? `${c.getFullYear()}-${pad(c.getMonth()+1)}-${pad(c.getDate())} ${fmt12(pad(c.getHours()) + ":" + pad(c.getMinutes()))}` : ""];
+  }
+  $("#exportBtn").addEventListener("click", async e => {
+    const btn = e.currentTarget; btn.disabled = true;
+    try{
+      const url = await api("exportOrders");
+      $("#sheetBody").innerHTML = `<h2>Copia lista</h2><p class="sub">Se guard\u00f3 una copia de todos los pedidos en la carpeta "Respaldos pedidos" de Google Drive.</p>
+        <a class="btn primary" href="${esc(url)}" target="_blank" rel="noopener" style="width:100%">Abrir la copia</a>
+        <div class="foot" style="margin-top:12px"><span></span><button class="btn ghost small" data-act="close">Cerrar</button></div>`;
+      $("#sheetBody").onclick = ev => { if (ev.target.closest("[data-act=close]")) sheet.close(); };
+      sheet.showModal();
+    }catch(err){ toast("No se pudo exportar. Intenta de nuevo."); }
+    finally{ btn.disabled = false; }
+  });
+
+  /* ---------- Data ---------- */
+  function onOrders(snap){
+    const incoming = snap.docs.filter(d => d.exists).map(d => Object.assign({id:d.id}, d.data()));
+    const newOnes = incoming.filter(o => !seen.has(o.id) && o.status === "pendiente");
+    orders = incoming;
+    if (!firstLoad && newOnes.length) chime();
+    renderBoard();
+    incoming.forEach(o => seen.add(o.id));
+    firstLoad = false;
+    setConn("live","En vivo");
+  }
+  function onCatalog(snap){
+    const d = snap.exists ? snap.data() : {};
+    catalog = {
+      productos: Array.isArray(d.productos) ? d.productos : [],
+      extras: Array.isArray(d.extras) ? d.extras : [],
+      sabores: Array.isArray(d.sabores) && d.sabores.length ? d.sabores : EMPTY_CAT.sabores,
+      rellenos: Array.isArray(d.rellenos) ? d.rellenos : [],
+      toppings: Array.isArray(d.toppings) ? d.toppings : [],
+      toppingExtra: d.toppingExtra && typeof d.toppingExtra === "object" ? d.toppingExtra : {}
+    };
+    catalogLoaded = true;
+    if (!editingId) renderCatalogControls();
+    if (!$("#view-prices").hidden && !pricesDirty) renderPrices();
+  }
+
+  /* ---------- Apps Script data layer ----------
+     Same shape the screens already use (collection/doc, set/update/delete, onSnapshot),
+     backed by google.script.run and refreshed every 20 seconds. */
+  const PIN_KEY = "marlenPin";
+  function getPin(){ try{ return localStorage.getItem(PIN_KEY) || window.__pin || ""; }catch(e){ return window.__pin || ""; } }
+  function setPin(p){ window.__pin = p; try{ localStorage.setItem(PIN_KEY, p); }catch(e){} }
+  function api(fn, ...args){
+    return new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(err => {
+        if (/PIN_INCORRECTO/.test(String((err && err.message) || err))){ askPin(!!getPin()); const e = new Error("PIN"); e.pin = true; reject(e); return; }
+        reject(err);
+      })[fn](getPin(), ...args);
+    });
+  }
+  function askPin(wrong){
+    let ov = document.getElementById("pinGate");
+    if (!ov){
+      ov = document.createElement("div"); ov.id = "pinGate";
+      ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:16px";
+      ov.innerHTML = `<form style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:24px;width:100%;max-width:340px;text-align:center">
+        <h2 style="margin:0 0 6px">Pedidos \u00b7 Pasteler\u00eda Marlen</h2>
+        <p class="sub" style="margin:0 0 16px">Escribe el PIN para entrar.</p>
+        <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" maxlength="8" style="width:100%;font-size:28px;text-align:center;letter-spacing:8px;padding:10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);color:var(--ink)">
+        <p id="pinMsg" style="color:var(--danger);min-height:1.4em;margin:8px 0"></p>
+        <button class="btn primary" style="width:100%">Entrar</button></form>`;
+      document.body.appendChild(ov);
+      ov.querySelector("form").addEventListener("submit", e => {
+        e.preventDefault();
+        const v = ov.querySelector("#pinInput").value.trim(); if (!v) return;
+        const b = ov.querySelector("button"); b.disabled = true;
+        google.script.run.withSuccessHandler(ok => {
+          b.disabled = false;
+          if (ok){ setPin(v); ov.remove(); refreshAll(); }
+          else { ov.querySelector("#pinMsg").textContent = "PIN incorrecto."; ov.querySelector("#pinInput").select(); }
+        }).withFailureHandler(() => { b.disabled = false; ov.querySelector("#pinMsg").textContent = "Sin conexi\u00f3n. Intenta de nuevo."; }).checkPin(v);
+      });
+    }
+    if (wrong) ov.querySelector("#pinMsg").textContent = "PIN incorrecto.";
+    setTimeout(() => { const i = document.getElementById("pinInput"); if (i) i.focus(); }, 50);
+  }
+  const local = {orders:{}, config:{}, tally:{}};
+  const listeners = [];
+  const ACTIVE = ["pendiente","preparacion","listo"];
+  function snapOf(coll){
+    const docs = Object.entries(local[coll]).filter(([,d]) => coll !== "orders" || ACTIVE.includes(d.status))
+      .map(([id,d]) => ({id, exists:true, data:() => d}));
+    return {docs, size:docs.length, empty:!docs.length};
+  }
+  function docSnap(coll, id){ const d = local[coll][id]; return {id, exists:!!d, data:() => d}; }
+  function notify(){
+    listeners.forEach(l => { try{ l.doc ? l.cb(docSnap(l.coll, l.doc)) : l.cb(snapOf(l.coll)); }catch(e){ console.error(e); } });
+  }
+  const newId = () => "p" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+  async function writeDoc(coll, id, data, mode){
+    if (mode === "delete") delete local[coll][id];
+    else local[coll][id] = mode === "update" ? Object.assign({}, local[coll][id] || {}, data) : data;
+    notify();
+    try{ await api("write", coll, id, data, mode); }
+    catch(err){ refreshAll(); throw {code:"unavailable", message: err && err.message}; }
+  }
+  function docRef(coll, id){
+    return {
+      id,
+      set: d => writeDoc(coll, id, d, "set"),
+      update: d => writeDoc(coll, id, d, "update"),
+      delete: () => writeDoc(coll, id, null, "delete"),
+      onSnapshot(cb){ const l = {coll, doc:id, cb}; listeners.push(l); setTimeout(() => cb(docSnap(coll, id)), 0); return () => listeners.splice(listeners.indexOf(l), 1); }
+    };
+  }
+  function collRef(coll){
+    const q = {
+      doc: id => docRef(coll, id || newId()),
+      add: async d => { const id = newId(); await writeDoc(coll, id, d, "set"); return docRef(coll, id); },
+      where: () => q, limit: () => q, orderBy: () => q,
+      get: async () => snapOf(coll),
+      onSnapshot(cb){ const l = {coll, cb}; listeners.push(l); setTimeout(() => cb(snapOf(coll)), 0); return () => listeners.splice(listeners.indexOf(l), 1); }
+    };
+    return q;
+  }
+  const appDb = {collection: collRef, doc: path => { const [c, id] = path.split("/"); return docRef(c, id); }};
+  const appAssets = {
+    upload: async b => {
+      const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(b); });
+      const id = await api("uploadPhoto", b64, b.type || "image/jpeg", "foto-" + Date.now() + ".jpg");
+      photoCache[id] = "data:" + (b.type || "image/jpeg") + ";base64," + b64;
+      return {id};
+    },
+    delete: id => api("trashPhoto", id)
+  };
+
+  let refreshing = false, failures = 0;
+  async function refreshAll(){
+    if (refreshing) return; refreshing = true;
+    try{
+      const st = await api("getState");
+      local.orders = {}; (st.orders || []).forEach(o => local.orders[o.id] = o.data);
+      local.config = {catalogo: st.catalog || {}};
+      local.tally = st.tally || {};
+      failures = 0; $("#dbNotice").hidden = true;
+      notify();
+      webDone = local.tally; webDoneLoaded = true;
+      onSheet(st.tallyRows, st.at);
+    }catch(err){
+      if (err && err.pin) return;
+      failures++;
+      setConn("off", "Sin conexi\u00f3n");
+      if (failures >= 2) $("#dbNotice").hidden = false;
+      setWebStatus("err", "No se pudo revisar el formulario. Se vuelve a intentar en 20 segundos.");
+    }finally{ refreshing = false; }
+  }
+
+  async function init(){
+    resetForm();
+    const h = location.hash;
+    showView(h === "#cocina" ? "kitchen" : h === "#precios" ? "prices" : "form");
+    if (!(window.google && google.script && google.script.run)){ setConn("off","Sin conexi\u00f3n"); $("#dbNotice").hidden = false; return; }
+    db = appDb; assets = appAssets; renderAllPhotos();
+    $("#exportBtn").hidden = false;
+    db.doc("config/catalogo").onSnapshot(onCatalog);
+    db.collection("orders").where("status","in",ACTIVE).onSnapshot(onOrders);
+    db.collection("tally").onSnapshot(snap => { webDone = {}; snap.docs.forEach(d => webDone[d.id] = d.data()); webDoneLoaded = true; renderWeb(); });
+    if (!getPin()) askPin(false); else await refreshAll();
+    setInterval(() => { if (!document.hidden && getPin() && !document.getElementById("pinGate")) refreshAll(); }, 20000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshAll(); });
+  }
+  init();
+})();
+</script>
+</body>
+</html>
