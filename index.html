@@ -246,6 +246,46 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
 #zoom img{max-width:94vw;max-height:88vh;display:block;border-radius:12px}
 
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:999px;font-weight:600;z-index:50;max-width:90vw;text-align:center}
+/* ---------- History & accounting ---------- */
+.wide-wrap{max-width:1100px;margin:0 auto}
+.wide-wrap h1{font-size:30px;font-weight:800;letter-spacing:-.02em;margin:8px 0 4px}
+.hhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0 12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:16px 16px 4px;margin:12px 0}
+.filters .wide{grid-column:span 2}
+.filters .fbtn{display:flex;align-items:flex-end;padding-bottom:12px}
+@media (max-width:760px){.filters{grid-template-columns:1fr 1fr}.filters .wide{grid-column:1 / -1}}
+.hinfo{color:var(--muted);margin:6px 2px 10px;font-size:15px}
+.hlist{display:grid;gap:8px}
+.hrow{display:grid;grid-template-columns:150px 1fr auto 170px;gap:12px;align-items:center;text-align:left;width:100%;background:var(--surface);border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:10px 14px;cursor:pointer;font:inherit;color:inherit}
+.hrow:hover{border-color:var(--accent)}
+.hrow b{font-weight:700}
+.hrow small{display:block;color:var(--muted);font-size:14px}
+.hrow .ht{text-align:right}
+@media (max-width:640px){.hrow{grid-template-columns:1fr auto}.hrow .hd{grid-column:1 / -1}.hrow .hs{grid-column:1;grid-row:3}.hrow .ht{grid-column:2;grid-row:2 / span 2}}
+.tag.s-pendiente{background:var(--accent-soft)}
+.tag.s-preparacion{background:var(--butter-soft)}
+.tag.s-listo{background:var(--mint-soft)}
+.tag.s-entregado{background:var(--ink);color:var(--bg)}
+.tag.s-cancelado{background:var(--danger-soft);color:var(--danger)}
+.cbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:12px 0}
+.cnav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cnav b{min-width:170px;text-align:center;font-size:18px}
+.cnav input{width:auto;min-height:38px;padding:6px 10px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px 16px}
+.kpi span{display:block;color:var(--muted);font-size:14px;font-weight:600}
+.kpi b{display:block;font-size:28px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-top:2px}
+.kpi.main{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.kpi.main span{color:inherit;opacity:.8}
+.bwrap{overflow-x:auto;margin-bottom:16px}
+.btable{width:100%;border-collapse:collapse;background:var(--surface);border-radius:var(--radius-lg);overflow:hidden;min-width:480px}
+.btable th,.btable td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;white-space:nowrap}
+.btable th:first-child,.btable td:first-child{text-align:left}
+.btable th{font-size:14px;color:var(--muted);font-weight:600}
+.btable tfoot td{font-weight:800;border-bottom:0}
+.h2s{font-size:20px;margin:18px 2px 10px}
+.paysum{font-weight:600;margin:0 0 12px}
+.paysum.warn{color:var(--danger)}
 </style>
 </head>
 <body>
@@ -255,6 +295,8 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   <nav class="tabs" role="tablist">
     <button role="tab" aria-selected="true" data-view="form">Nuevo pedido</button>
     <button role="tab" aria-selected="false" data-view="kitchen">Cocina</button>
+    <button role="tab" aria-selected="false" data-view="hist">Historial</button>
+    <button role="tab" aria-selected="false" data-view="cont">Contabilidad</button>
     <button role="tab" aria-selected="false" data-view="prices">Precios</button>
   </nav>
 </header>
@@ -419,6 +461,39 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       <button class="btn ghost" type="button" id="resetPrices">Descartar cambios</button>
     </div>
   </section>
+
+  <!-- ===== HISTORY ===== -->
+  <section id="view-hist" class="wide-wrap" hidden>
+    <div class="hhead"><h1>Historial de pedidos</h1><button class="btn ghost small" id="hReload" type="button">Actualizar</button></div>
+    <div class="filters">
+      <label class="f wide"><span class="lbl">Buscar</span><input type="text" id="hQ" placeholder="Nombre, teléfono o mensaje" autocomplete="off"></label>
+      <label class="f"><span class="lbl">Entrega desde</span><input type="date" id="hDesde"></label>
+      <label class="f"><span class="lbl">Hasta</span><input type="date" id="hHasta"></label>
+      <label class="f"><span class="lbl">Estado</span><select id="hEst"><option value="">Todos</option><option value="pendiente">Por hacer</option><option value="preparacion">En preparación</option><option value="listo">Listo para entregar</option><option value="entregado">Entregado</option><option value="cancelado">Cancelado</option></select></label>
+      <label class="f"><span class="lbl">Origen</span><select id="hOri"><option value="">Todos</option></select></label>
+      <label class="f"><span class="lbl">Forma</span><select id="hForma"><option value="">Todas</option></select></label>
+      <label class="f"><span class="lbl">Pago</span><select id="hPago"><option value="">Todos</option><option>SINPE</option><option>Efectivo</option><option>Ambos</option><option>Sin registrar</option></select></label>
+      <label class="f"><span class="lbl">Ordenar</span><select id="hSort"><option value="desc">Entrega más reciente primero</option><option value="asc">Entrega más antigua primero</option></select></label>
+      <div class="f fbtn"><button class="btn ghost small" id="hClear" type="button">Quitar filtros</button></div>
+    </div>
+    <p class="hinfo" id="hInfo">Cargando…</p>
+    <div class="hlist" id="hList"></div>
+    <p style="text-align:center;margin-top:12px"><button class="btn ghost" id="hMore" type="button" hidden>Ver más</button></p>
+  </section>
+
+  <!-- ===== ACCOUNTING ===== -->
+  <section id="view-cont" class="wide-wrap" hidden>
+    <div class="hhead"><h1>Contabilidad</h1><button class="btn ghost small" id="cReload" type="button">Actualizar</button></div>
+    <p class="lead" style="color:var(--muted);margin:0">Cuenta el total de cada pedido el día que se entrega.</p>
+    <div class="cbar">
+      <div class="chips" id="cPer"><button aria-pressed="true" data-p="dia">Día</button><button aria-pressed="false" data-p="semana">Semana</button><button aria-pressed="false" data-p="mes">Mes</button><button aria-pressed="false" data-p="anio">Año</button></div>
+      <div class="cnav"><button class="btn ghost small" id="cPrev" type="button" aria-label="Anterior">‹</button><b id="cLabel"></b><button class="btn ghost small" id="cNext" type="button" aria-label="Siguiente">›</button><button class="btn ghost small" id="cToday" type="button">Hoy</button><input type="date" id="cDate" aria-label="Ir a una fecha"></div>
+    </div>
+    <div class="kpis" id="cKpis"></div>
+    <div id="cBreak"></div>
+    <h2 class="h2s">Pedidos entregados</h2>
+    <div class="hlist" id="cList"></div>
+  </section>
 </main>
 
 <dialog id="sheet"><div class="sheet" id="sheetBody"></div></dialog>
@@ -448,7 +523,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   }
   const DAYS = ["domingo","lunes","martes","mi\u00e9rcoles","jueves","viernes","s\u00e1bado"];
   const MONTHS = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
-  const STATUS = {pendiente:"Por hacer", preparacion:"En preparaci\u00f3n", listo:"Listo para entregar", entregado:"Entregado"};
+  const STATUS = {pendiente:"Por hacer", preparacion:"En preparaci\u00f3n", listo:"Listo para entregar", entregado:"Entregado", cancelado:"Cancelado"};
   const OTROS = "Otros";
   const ABONO_MIN = 5000, ABONO_UMBRAL = 14000;
   const EMPTY_CAT ={productos:[], extras:[], sabores:["Vainilla","Chocolate"], rellenos:[], toppings:[]};
@@ -487,11 +562,13 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
 
   /* ---------- Views ---------- */
   function showView(v){
-    ["form","kitchen","prices"].forEach(x => $("#view-"+x).hidden = x !== v);
+    ["form","kitchen","prices","hist","cont"].forEach(x => $("#view-"+x).hidden = x !== v);
     $$(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.view === v)));
-    try{ history.replaceState(null, "", "#" + ({form:"pedido",kitchen:"cocina",prices:"precios"})[v]); }catch(e){}
+    try{ history.replaceState(null, "", "#" + ({form:"pedido",kitchen:"cocina",prices:"precios",hist:"historial",cont:"contabilidad"})[v]); }catch(e){}
     if (v === "kitchen") renderBoard();
     if (v === "prices" && !pricesDirty) renderPrices();
+    if (v === "hist"){ renderHistory(); loadHistory(); }
+    if (v === "cont"){ renderCont(); loadHistory(); }
   }
   $$(".tabs button").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
 
@@ -965,6 +1042,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
         <dt>Entrega</dt><dd>${esc(o.entrega)}${o.direccion ? ": " + esc(o.direccion) : ""}</dd>
         ${tel ? `<dt>Tel\u00e9fono</dt><dd><a href="tel:${esc(tel)}" style="color:inherit">${esc(tel.slice(0,4)+" "+tel.slice(4))}</a> \u00b7 <a href="https:\/\/wa.me/506${esc(tel)}" target="_blank" rel="noopener" style="color:inherit">WhatsApp</a></dd>` : ""}
         <dt>Pago</dt><dd>Total ${esc(crc(o.total))} \u00b7 Abono ${esc(crc(o.anticipo))} \u00b7 Saldo ${esc(crc(saldo))}</dd>
+        ${o.status === "entregado" ? `<dt>Cobrado</dt><dd>${esc(pagoLabel(o))}${o.pago && o.pago.metodo === "Ambos" ? "" : o.pago ? " \u00b7 " + esc(crc(o.pago.total)) : ""} \u00b7 entregado ${esc(fmtD(new Date(entregaTs(o))))}</dd>` : ""}
         ${o.notas ? `<dt>Notas</dt><dd>${esc(o.notas)}</dd>` : ""}
         <dt>Origen</dt><dd>${esc(o.origen||"")}</dd>
       </dl>
@@ -975,13 +1053,16 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       <div class="moves">${moves}</div>
       <div class="foot">
         <button class="btn ghost small" data-act="edit">Editar pedido</button>
-        <button class="btn danger small" data-act="del">Cancelar pedido</button>
+        ${o.status === "entregado" ? `<button class="btn ghost small" data-act="pay">${o.pago ? "Cambiar pago" : "Registrar pago"}</button>` : ""}
+        ${o.status === "cancelado" ? "" : `<button class="btn danger small" data-act="del">Cancelar pedido</button>`}
         <button class="btn ghost small" data-act="close">Cerrar</button>
       </div>`;
     $("#sheetBody").onclick = async e => {
       const z = e.target.closest("[data-zoom]");
       if (z){ zoom.querySelector("img").src = z.src; zoom.showModal(); return; }
       const b = e.target.closest("button"); if (!b) return;
+      if (b.dataset.move === "entregado"){ showPayForm(o); return; }
+      if (b.dataset.act === "pay"){ showPayForm(o); return; }
       if (b.dataset.move){
         b.disabled = true;
         try{ await db.collection("orders").doc(o.id).update({status:b.dataset.move, updatedAt:Date.now()}); sheet.close();
@@ -991,8 +1072,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       else if (b.dataset.act === "del"){
         if (b.dataset.confirm !== "1"){ b.dataset.confirm = "1"; b.textContent = "Toca otra vez para confirmar"; return; }
         try{
-          await db.collection("orders").doc(o.id).delete(); sheet.close(); toast("Pedido cancelado");
-          if (assets) (o.refImgs||[]).concat(o.comprobantes||[]).forEach(id => assets.delete(id).catch(()=>{}));
+          await db.collection("orders").doc(o.id).update({status:"cancelado", canceladoAt:Date.now(), updatedAt:Date.now()}); sheet.close(); toast("Pedido cancelado");
         }catch(err){ toast("No se pudo cancelar. Intenta de nuevo."); }
       } else if (b.dataset.act === "close") sheet.close();
     };
@@ -1232,6 +1312,203 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     sheet.showModal();
   }
 
+
+  /* ---------- History & accounting ---------- */
+  let hist = [], histById = {}, histLoaded = false, histLoading = null, histLimit = 150;
+  let contPer = "dia", contRef = new Date();
+  const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  const histNorm = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  function fmtFecha(f){
+    const [y,m,d] = String(f||"").split("-").map(Number); if (!y) return f || "";
+    const dt = new Date(y, m-1, d); return `${DAYS[dt.getDay()].slice(0,3)} ${d} ${MONTHS[m-1]} ${y}`;
+  }
+  const entregaTs = o => Number(o.entregadoAt) || Number(o.updatedAt) || Number(o.dueAt) || 0;
+  function pagoMetodo(o){ return o.pago ? o.pago.metodo : (o.status === "entregado" ? "Sin registrar" : ""); }
+  function pagoLabel(o){
+    if (o.pago) return o.pago.metodo === "Ambos" ? "SINPE " + crc(o.pago.sinpe) + " + Efectivo " + crc(o.pago.efectivo) : o.pago.metodo;
+    if (o.status === "entregado") return "Pago sin registrar";
+    const ab = Number(o.anticipo)||0; return ab ? "Abono " + crc(ab) : "";
+  }
+  function histRow(o, cont){
+    const p = o.producto || {};
+    let when;
+    if (cont){ const d = new Date(entregaTs(o)); when = `<b>${DAYS[d.getDay()].slice(0,3)} ${d.getDate()} ${MONTHS[d.getMonth()]}</b><small>${esc(fmt12(pad(d.getHours()) + ":" + pad(d.getMinutes())))}</small>`; }
+    else when = `<b>${esc(fmtFecha(o.fecha))}</b><small>${esc(fmt12(o.hora))}</small>`;
+    return `<button type="button" class="hrow" data-id="${esc(o.id)}"><span class="hd">${when}</span><span class="hc"><b>${esc(o.cliente || "Sin nombre")}</b><small>${esc(p.forma ? prodLabel(p) : "")}${o.sabor ? " \u00b7 " + esc(o.sabor) : ""}</small></span><span class="hs"><span class="tag s-${esc(o.status || "")}">${esc(STATUS[o.status] || o.status || "")}</span></span><span class="ht"><b>${esc(crc(o.total))}</b><small>${esc(pagoLabel(o))}</small></span></button>`;
+  }
+  function loadHistory(){
+    if (histLoading) return histLoading;
+    if (!histLoaded) $("#hInfo").textContent = "Cargando\u2026";
+    histLoading = api("getHistory").then(rows => {
+      hist = (rows || []).map(r => Object.assign({}, r.data, {id: r.id}));
+      histById = {}; hist.forEach(o => histById[o.id] = o);
+      histLoaded = true; fillHistFilters(); refreshHistViews();
+    }).catch(err => {
+      if (!(err && err.pin)) $("#hInfo").textContent = "No se pudo cargar el historial. Toca Actualizar.";
+    }).finally(() => { histLoading = null; });
+    return histLoading;
+  }
+  function refreshHistViews(){
+    if (!$("#view-hist").hidden) renderHistory();
+    if (!$("#view-cont").hidden) renderCont();
+  }
+  function fillHistFilters(){
+    const setOpts = (sel, vals, allLabel) => { const cur = sel.value;
+      sel.innerHTML = `<option value="">${allLabel}</option>` + vals.map(v => `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(v)}</option>`).join(""); };
+    setOpts($("#hOri"), [...new Set(hist.map(o => o.origen).filter(Boolean))].sort(), "Todos");
+    setOpts($("#hForma"), [...new Set(hist.map(o => (o.producto || {}).forma).filter(Boolean))].sort(), "Todas");
+  }
+  function renderHistory(){
+    if (!histLoaded){ $("#hList").innerHTML = ""; $("#hMore").hidden = true; return; }
+    const q = histNorm($("#hQ").value.trim()), est = $("#hEst").value, ori = $("#hOri").value, forma = $("#hForma").value,
+          pago = $("#hPago").value, d1 = $("#hDesde").value, d2 = $("#hHasta").value, asc = $("#hSort").value === "asc";
+    const list = hist.filter(o => {
+      if (est && (o.status || "") !== est) return false;
+      if (ori && (o.origen || "") !== ori) return false;
+      if (forma && ((o.producto || {}).forma || "") !== forma) return false;
+      if (d1 && (o.fecha || "") < d1) return false;
+      if (d2 && (o.fecha || "") > d2) return false;
+      if (pago && pagoMetodo(o) !== pago) return false;
+      if (q && !histNorm([o.cliente, o.telefono, digits(o.telefono), o.mensaje, o.decoracion, o.notas, o.sabor, o.relleno, o.topping].join(" ")).includes(q)) return false;
+      return true;
+    });
+    const key = o => (o.fecha || "") + " " + (o.hora || "");
+    list.sort((a, b) => asc ? key(a).localeCompare(key(b)) : key(b).localeCompare(key(a)));
+    const sum = list.filter(o => o.status !== "cancelado").reduce((a, o) => a + (Number(o.total) || 0), 0);
+    $("#hInfo").textContent = list.length ? `${list.length} ${list.length === 1 ? "pedido" : "pedidos"} \u00b7 Total ${crc(sum)}${list.length > histLimit ? " \u00b7 mostrando " + histLimit : ""}` : "No hay pedidos con esos filtros.";
+    $("#hList").innerHTML = list.slice(0, histLimit).map(o => histRow(o, false)).join("");
+    $("#hMore").hidden = list.length <= histLimit;
+  }
+  ["hQ","hDesde","hHasta","hEst","hOri","hForma","hPago","hSort"].forEach(id => $("#" + id).addEventListener("input", () => { histLimit = 150; renderHistory(); }));
+  $("#hClear").addEventListener("click", () => { ["hQ","hDesde","hHasta","hEst","hOri","hForma","hPago"].forEach(id => $("#" + id).value = ""); $("#hSort").value = "desc"; histLimit = 150; renderHistory(); });
+  $("#hMore").addEventListener("click", () => { histLimit += 150; renderHistory(); });
+  $("#hReload").addEventListener("click", loadHistory);
+  $("#cReload").addEventListener("click", loadHistory);
+  ["#hList","#cList"].forEach(sel => $(sel).addEventListener("click", e => { const r = e.target.closest(".hrow"); if (r && histById[r.dataset.id]) openSheet(histById[r.dataset.id]); }));
+
+  function contRange(){
+    const r = contRef, y = r.getFullYear(), m = r.getMonth(), d = r.getDate();
+    if (contPer === "dia") return [new Date(y, m, d), new Date(y, m, d + 1)];
+    if (contPer === "semana"){ const s = d - ((r.getDay() + 6) % 7); return [new Date(y, m, s), new Date(y, m, s + 7)]; }
+    if (contPer === "mes") return [new Date(y, m, 1), new Date(y, m + 1, 1)];
+    return [new Date(y, 0, 1), new Date(y + 1, 0, 1)];
+  }
+  const fmtD = dt => `${dt.getDate()} ${MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
+  function contLabel(a, b){
+    if (contPer === "dia") return DAYS[a.getDay()] + " " + fmtD(a);
+    if (contPer === "semana"){ const e = new Date(b.getFullYear(), b.getMonth(), b.getDate() - 1); return fmtD(a) + " al " + fmtD(e); }
+    if (contPer === "mes") return MESES[a.getMonth()] + " " + a.getFullYear();
+    return String(a.getFullYear());
+  }
+  function contShift(n){
+    const r = contRef;
+    if (contPer === "dia") contRef = new Date(r.getFullYear(), r.getMonth(), r.getDate() + n);
+    else if (contPer === "semana") contRef = new Date(r.getFullYear(), r.getMonth(), r.getDate() + 7 * n);
+    else if (contPer === "mes") contRef = new Date(r.getFullYear(), r.getMonth() + n, 1);
+    else contRef = new Date(r.getFullYear() + n, 0, 1);
+    renderCont();
+  }
+  function money(o){
+    if (o.pago) return {s: Number(o.pago.sinpe) || 0, e: Number(o.pago.efectivo) || 0, n: 0};
+    return {s: 0, e: 0, n: Number(o.total) || 0};
+  }
+  function sumUp(list){
+    const t = {s: 0, e: 0, n: 0, c: list.length};
+    list.forEach(o => { const m = money(o); t.s += m.s; t.e += m.e; t.n += m.n; });
+    t.t = t.s + t.e + t.n; return t;
+  }
+  function renderCont(){
+    const [a, b] = contRange();
+    $("#cLabel").textContent = contLabel(a, b);
+    $("#cDate").value = todayStr(contRef);
+    $$("#cPer button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.p === contPer)));
+    if (!histLoaded){ $("#cKpis").innerHTML = `<p class="hinfo">Cargando\u2026</p>`; $("#cBreak").innerHTML = ""; $("#cList").innerHTML = ""; return; }
+    const inRange = (o, s, e) => { const x = entregaTs(o); return x >= s && x < e; };
+    const list = hist.filter(o => o.status === "entregado" && inRange(o, a.getTime(), b.getTime())).sort((x, y) => entregaTs(y) - entregaTs(x));
+    const t = sumUp(list);
+    $("#cKpis").innerHTML = `<div class="kpi main"><span>Total</span><b>${crc(t.t)}</b></div>`
+      + `<div class="kpi"><span>SINPE</span><b>${crc(t.s)}</b></div>`
+      + `<div class="kpi"><span>Efectivo</span><b>${crc(t.e)}</b></div>`
+      + (t.n ? `<div class="kpi"><span>Sin m\u00e9todo registrado</span><b>${crc(t.n)}</b></div>` : "")
+      + `<div class="kpi"><span>Pedidos entregados</span><b>${t.c}</b></div>`;
+    let buckets = [];
+    if (contPer === "semana" || contPer === "mes"){
+      for (let d = new Date(a); d < b; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)){
+        const s = d.getTime(), e = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+        buckets.push({label: DAYS[d.getDay()].slice(0,3) + " " + d.getDate() + " " + MONTHS[d.getMonth()], list: list.filter(o => inRange(o, s, e))});
+      }
+      if (contPer === "mes") buckets = buckets.filter(k => k.list.length);
+    } else if (contPer === "anio"){
+      for (let mo = 0; mo < 12; mo++){
+        const s = new Date(a.getFullYear(), mo, 1).getTime(), e = new Date(a.getFullYear(), mo + 1, 1).getTime();
+        buckets.push({label: MESES[mo][0].toUpperCase() + MESES[mo].slice(1), list: list.filter(o => inRange(o, s, e))});
+      }
+    }
+    const extraCol = t.n > 0;
+    const row = (label, x) => `<td>${esc(label)}</td><td>${x.c}</td><td>${crc(x.s)}</td><td>${crc(x.e)}</td>${extraCol ? `<td>${crc(x.n)}</td>` : ""}<td><b>${crc(x.t)}</b></td>`;
+    $("#cBreak").innerHTML = buckets.length
+      ? `<div class="bwrap"><table class="btable"><thead><tr><th>${contPer === "anio" ? "Mes" : "D\u00eda"}</th><th>Pedidos</th><th>SINPE</th><th>Efectivo</th>${extraCol ? "<th>Sin m\u00e9todo</th>" : ""}<th>Total</th></tr></thead><tbody>${buckets.map(k => `<tr>${row(k.label, sumUp(k.list))}</tr>`).join("")}</tbody><tfoot><tr>${row("Total", t)}</tr></tfoot></table></div>`
+      : (contPer === "mes" ? `<p class="hinfo">No hay entregas en este mes.</p>` : "");
+    $("#cList").innerHTML = list.length ? list.map(o => histRow(o, true)).join("") : `<p class="hinfo">No hay pedidos entregados en este per\u00edodo.</p>`;
+  }
+  $("#cPer").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; contPer = b.dataset.p; renderCont(); });
+  $("#cPrev").addEventListener("click", () => contShift(-1));
+  $("#cNext").addEventListener("click", () => contShift(1));
+  $("#cToday").addEventListener("click", () => { contRef = new Date(); renderCont(); });
+  $("#cDate").addEventListener("change", e => { const [y,m,d] = (e.target.value || "").split("-").map(Number); if (y){ contRef = new Date(y, m - 1, d); renderCont(); } });
+
+  /* Payment chosen when an order is delivered. Also used to fix the payment of a delivered order. */
+  function showPayForm(o){
+    const total = Number(o.total) || 0, abono = Number(o.anticipo) || 0, already = o.status === "entregado";
+    const cur = o.pago || null;
+    $("#sheetBody").innerHTML = `
+      <h2>${already ? "Pago del pedido" : "Entregar pedido"}</h2>
+      <p class="sub">${esc(o.cliente || "")} \u00b7 Total ${esc(crc(total))}${abono ? " \u00b7 Abono " + esc(crc(abono)) : ""}</p>
+      <span class="lbl">\u00bfC\u00f3mo pag\u00f3?</span>
+      <div class="seg" id="payM">
+        <label><input type="radio" name="payM" value="SINPE"><span>SINPE</span></label>
+        <label><input type="radio" name="payM" value="Efectivo"><span>Efectivo</span></label>
+        <label><input type="radio" name="payM" value="Ambos"><span>Ambos</span></label>
+      </div>
+      <div class="row">
+        <label class="f" id="pSW"><span class="lbl">SINPE (\u20a1)</span><input type="number" id="pS" min="0" step="100" inputmode="numeric"></label>
+        <label class="f" id="pEW"><span class="lbl">Efectivo (\u20a1)</span><input type="number" id="pE" min="0" step="100" inputmode="numeric"></label>
+      </div>
+      <p class="paysum" id="pSum"></p>
+      <div class="foot"><button class="btn ghost small" data-act="back">Volver</button><button class="btn primary" data-act="payok">${already ? "Guardar pago" : "Marcar entregado"}</button></div>`;
+    const setM = m => {
+      $$('input[name=payM]').forEach(r => r.checked = r.value === m);
+      $("#pSW").hidden = m === "Efectivo"; $("#pEW").hidden = m === "SINPE";
+      if (m === "SINPE"){ $("#pS").value = total; $("#pE").value = 0; }
+      else if (m === "Efectivo"){ $("#pE").value = total; $("#pS").value = 0; }
+      else { const s = Math.min(abono, total); $("#pS").value = s; $("#pE").value = Math.max(total - s, 0); }
+      upd();
+    };
+    const vals = () => { const m = ($('input[name=payM]:checked') || {}).value || "SINPE";
+      return {m, s: m === "Efectivo" ? 0 : Math.max(Number($("#pS").value) || 0, 0), e: m === "SINPE" ? 0 : Math.max(Number($("#pE").value) || 0, 0)}; };
+    const upd = () => { const v = vals(), sum = v.s + v.e, el = $("#pSum");
+      el.textContent = "Total cobrado: " + crc(sum) + (sum !== total ? " \u00b7 no coincide con el total del pedido (" + crc(total) + ")" : "");
+      el.className = "paysum" + (sum !== total ? " warn" : ""); };
+    $("#payM").addEventListener("change", e => setM(e.target.value));
+    $("#pS").addEventListener("input", upd); $("#pE").addEventListener("input", upd);
+    if (cur){ setM(cur.metodo); $("#pS").value = cur.sinpe || 0; $("#pE").value = cur.efectivo || 0; upd(); }
+    else setM(abono > 0 && abono < total ? "Ambos" : "SINPE");
+    $("#sheetBody").onclick = async e => {
+      const b = e.target.closest("button"); if (!b) return;
+      if (b.dataset.act === "back"){ openSheet(o); return; }
+      if (b.dataset.act !== "payok") return;
+      const v = vals();
+      if (v.s + v.e <= 0 && total > 0){ toast("Escribe el monto cobrado."); return; }
+      const now = Date.now();
+      const data = {pago: {metodo: v.m, sinpe: v.s, efectivo: v.e, total: v.s + v.e}, updatedAt: now};
+      if (!already) Object.assign(data, {status: "entregado", entregadoAt: now});
+      else if (!o.entregadoAt) data.entregadoAt = entregaTs(o);
+      b.disabled = true;
+      try{ await db.collection("orders").doc(o.id).update(data); sheet.close(); toast(already ? "Pago guardado" : "Pedido entregado"); }
+      catch(err){ toast("No se pudo guardar. Intenta de nuevo."); b.disabled = false; }
+    };
+  }
+
   /* ---------- Export ---------- */
   const EXPORT_COLS = ["ID","Estado","Origen","Cliente","Tel\u00e9fono","Fecha de entrega","Hora","Forma y tama\u00f1o","Tipo","Sabor","Relleno","Topping","Mensaje","Decoraci\u00f3n","Extras","Desglose","Total (\u20a1)","Abono (\u20a1)","Saldo (\u20a1)","Precio confirmado","Notas","Fotos de referencia","Comprobantes","Creado"];
   const csvCell = v => { const s = String(v ?? ""); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
@@ -1340,7 +1617,8 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   const newId = () => "p" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
   async function writeDoc(coll, id, data, mode){
     if (mode === "delete") delete local[coll][id];
-    else local[coll][id] = mode === "update" ? Object.assign({}, local[coll][id] || {}, data) : data;
+    else local[coll][id] = mode === "update" ? Object.assign({}, local[coll][id] || (coll === "orders" && histById[id]) || {}, data) : data;
+    if (coll === "orders" && histById[id] && mode !== "delete"){ Object.assign(histById[id], data); refreshHistViews(); }
     notify();
     try{ await api("write", coll, id, data, mode); }
     catch(err){ refreshAll(); throw {code:"unavailable", message: err && err.message}; }
@@ -1399,7 +1677,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   async function init(){
     resetForm();
     const h = location.hash;
-    showView(h === "#cocina" ? "kitchen" : h === "#precios" ? "prices" : "form");
+    showView(h === "#cocina" ? "kitchen" : h === "#precios" ? "prices" : h === "#historial" ? "hist" : h === "#contabilidad" ? "cont" : "form");
     if (!(window.google && google.script && google.script.run)){ setConn("off","Sin conexi\u00f3n"); $("#dbNotice").hidden = false; return; }
     db = appDb; assets = appAssets; renderAllPhotos();
     $("#exportBtn").hidden = false;
