@@ -1279,6 +1279,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     const personalizada = !!s.deco || refUrls.length > 0 || sinPrecio.length > 0;
     let tel = String(s.tel).replace(/\D/g,""); if (tel.length === 11 && tel.startsWith("506")) tel = tel.slice(3);
     const hora = parseHora(s.hora) || s.hora;
+    s.fecha = (String(s.fecha || "").match(/^\d{4}-\d{2}-\d{2}/) || [s.fecha])[0];
     const [y,mo,d] = (s.fecha||"").split("-").map(Number); const [hh,mm] = (hora||"0:0").split(":").map(Number);
     return {
       id: "web:" + s.id, webId: s.id, enviadoEn: s.at,
@@ -1394,8 +1395,9 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
   const histNorm = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
   function fmtFecha(f){
-    const [y,m,d] = String(f||"").split("-").map(Number); if (!y) return f || "";
-    const dt = new Date(y, m-1, d); return `${DAYS[dt.getDay()].slice(0,3)} ${d} ${MONTHS[m-1]} ${y}`;
+    const [y,m,d] = String(f||"").slice(0, 10).split("-").map(Number); if (!y || !m || !d) return String(f || "");
+    const dt = new Date(y, m-1, d); if (isNaN(dt)) return String(f || "");
+    return `${DAYS[dt.getDay()].slice(0,3)} ${d} ${MONTHS[m-1]} ${y}`;
   }
   const entregaTs = o => Number(o.entregadoAt) || Number(o.updatedAt) || Number(o.dueAt) || 0;
   function pagoMetodo(o){ return o.pago ? o.pago.metodo : (o.status === "entregado" ? "Sin registrar" : ""); }
