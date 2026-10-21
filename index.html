@@ -721,6 +721,12 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     syncHora();
   }
   function syncHora(){ form.hora.value = $("#hSel").value; }
+  function fueraDeHorario(o){
+    const r = horarioDe(o.fecha); if (!r) return true;
+    const v = parseHora(o.hora); if (!v) return false;
+    const [h, m] = v.split(":").map(Number), t = h * 60 + m;
+    return t < r[0] || t > r[1];
+  }
   function setHora(v){ fillHoras(parseHora(v) || "", true); }
   $("#hSel").addEventListener("change", syncHora);
   form.fecha.addEventListener("change", () => fillHoras());
@@ -1298,7 +1304,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     const s = $("#webSync");
     s.className = "sync" + (webStatus.state === "err" ? " err" : "");
     s.innerHTML = esc(webStatus.text) + `<br><button class="btn ghost small" data-webretry>Revisar ahora</button>`;
-    $("#l-web").innerHTML = list.length ? list.map(o => cardHTML(o).replace('<div class="meta">', '<div class="meta"><span class="tag web">Web</span>')).join("")
+    $("#l-web").innerHTML = list.length ? list.map(o => cardHTML(o).replace('<div class="meta">', '<div class="meta"><span class="tag web">Web</span>' + (fueraDeHorario(o) ? '<span class="tag warn">Fuera de horario</span>' : ''))).join("")
       : (webStatus.state === "ok" ? `<p class="empty">No hay pedidos nuevos del formulario.</p>` : "");
     list.forEach(o => webSeen.add(o.id));
   }
@@ -1325,6 +1331,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     $("#sheetBody").innerHTML = `
       <h2>${esc(o.cliente)}</h2>
       <p class="sub">Pedido del formulario \u00b7 para ${esc(dayLabel(o.fecha))} a las ${esc(fmt12(o.hora))}</p>
+      ${fueraDeHorario(o) ? `<p class="notice">La fecha u hora est\u00e1 fuera del horario de entrega (martes a s\u00e1bado 9:00 a.m. a 5:00 p.m., domingos hasta las 3:00 p.m., lunes cerrado). Coordine otra hora con el cliente.</p>` : ""}
       ${o.sinCatalogo ? `<p class="notice">"${esc(prodLabel(o.producto))}" no est\u00e1 en Precios. El total no incluye el queque; corr\u00edgelo despu\u00e9s en Editar pedido.</p>` : ""}
       <dl>
         <dt>Queque</dt><dd>${esc(prodLabel(o.producto))}</dd>
