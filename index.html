@@ -285,6 +285,8 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
 .btable tfoot td{font-weight:800;border-bottom:0}
 .h2s{font-size:20px;margin:18px 2px 10px}
 .paysum{font-weight:600;margin:0 0 12px}
+.chk{display:flex;align-items:center;gap:10px;margin:-4px 0 12px;font-weight:600;cursor:pointer}
+.chk input{width:22px;height:22px;flex:none;accent-color:var(--accent)}
 .paysum.warn{color:var(--danger)}
 </style>
 </head>
@@ -386,6 +388,10 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       <fieldset>
         <legend>Pago</legend>
         <label class="f"><span class="lbl">Abono recibido (₡)</span><input type="number" name="anticipo" min="0" step="100" inputmode="numeric" placeholder="0"></label>
+        <div id="abonoFechaWrap" hidden>
+          <label class="chk"><input type="checkbox" id="abonoHoy" checked><span>El abono se recibió hoy</span></label>
+          <label class="f" id="abonoFechaF" hidden><span class="lbl">Fecha en que se recibió el abono</span><input type="date" name="abonoFecha"></label>
+        </div>
         <span class="lbl">Comprobante de pago o abono <small>(foto o captura del SINPE)</small></span>
         <div class="photos" id="payPhotos"></div>
         <div class="totals" id="totals"></div>
@@ -678,6 +684,22 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   /* ---------- Form ---------- */
   const form = $("#orderForm");
   ["cantidad","decoEspecial","anticipo","decoracion"].forEach(n => form[n].addEventListener("input", updateTotals));
+  function toggleAbono(){
+    const has = (Number(form.anticipo.value) || 0) > 0, hoy = $("#abonoHoy").checked;
+    $("#abonoFechaWrap").hidden = !has;
+    $("#abonoFechaF").hidden = hoy;
+    form.abonoFecha.max = todayStr();
+    if (has && !hoy && !form.abonoFecha.value) form.abonoFecha.value = todayStr();
+  }
+  form.anticipo.addEventListener("input", toggleAbono);
+  $("#abonoHoy").addEventListener("change", toggleAbono);
+  function abonoFields(monto){
+    if (!(monto > 0)) return {abonoFecha: "", abonoAt: null};
+    if ($("#abonoHoy").checked) return {abonoFecha: todayStr(), abonoAt: Date.now()};
+    const f = form.abonoFecha.value; if (!f) return {abonoFecha: "", abonoAt: null};
+    const [y, m, d] = f.split("-").map(Number);
+    return {abonoFecha: f, abonoAt: new Date(y, m - 1, d, 12, 0).getTime()};
+  }
   $("#prodSel").addEventListener("change", updateTotals);
 
   $("#hH").insertAdjacentHTML("beforeend", Array.from({length:12}, (_,i) => `<option value="${i+1}">${i+1}</option>`).join(""));
@@ -763,7 +785,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     $("#editBanner").hidden = true; $("#formTitle").textContent = "Nuevo pedido";
     $("#saveBtn").textContent = "Guardar pedido";
     form.telefono.classList.remove("bad"); $("#telHint").hidden = true;
-    renderCatalogControls(); renderAllPhotos(); toggleDir(); updateTotals();
+    renderCatalogControls(); renderAllPhotos(); toggleDir(); updateTotals(); toggleAbono();
   }
   $("#clearBtn").addEventListener("click", resetForm);
   $("#cancelEdit").addEventListener("click", resetForm);
@@ -773,7 +795,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     syncHora();
     const fecha = form.fecha.value, hora = form.hora.value;
     const [y,m,d] = fecha.split("-").map(Number); const [hh,mm] = (hora||"0:0").split(":").map(Number);
-    return {
+    return Object.assign({
       cliente: form.cliente.value.trim(), telefono: digits(form.telefono.value),
       origen: form.origen.value, fecha, hora,
       dueAt: new Date(y, (m||1)-1, d||1, hh||0, mm||0).getTime(),
@@ -786,7 +808,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       refImgs: refIds.slice(), extras: readExtras(), decoEspecial: t.deco, toppingExtra: t.topExtra,
       total: t.total, anticipo: t.abono, comprobantes: payIds.slice(), abonoRequerido: t.requerido,
       notas: form.notas.value.trim()
-    };
+    }, abonoFields(t.abono));
   }
   function validate(o){
     if (!o.cliente) return ["cliente","Escribe el nombre del cliente."];
@@ -794,6 +816,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     if (!o.fecha) return ["fecha","Elige la fecha de entrega."];
     if (!o.hora) return ["hH","Elige la hora de entrega."];
     if (!o.producto) return ["producto","Elige la forma y el tama\u00f1o del queque."];
+    if (o.anticipo > 0 && !o.abonoFecha) return ["abonoFecha","Elige la fecha en que se recibi\u00f3 el abono."];
     return null;
   }
 
@@ -850,6 +873,11 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     });
     form.decoEspecial.value = o.decoEspecial || "";
     form.anticipo.value = o.anticipo || ""; form.notas.value = o.notas||"";
+    if ((Number(o.anticipo) || 0) > 0){
+      $("#abonoHoy").checked = false;
+      form.abonoFecha.value = o.abonoFecha || (o.createdAt ? todayStr(new Date(o.createdAt)) : "");
+    } else { $("#abonoHoy").checked = true; form.abonoFecha.value = ""; }
+    toggleAbono();
     refIds = (o.refImgs||[]).slice(); payIds = (o.comprobantes||[]).slice();
     $("#editBanner").hidden = false; $("#formTitle").textContent = "Editar pedido";
     $("#saveBtn").textContent = "Guardar cambios";
@@ -1011,9 +1039,11 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     });
     update();
   }
-  function confirmData(c){
+  function confirmData(c, o){
     const deco = c.lines.find(l => norm(l.label) === norm("Decoraci\u00f3n especial"));
-    return {desglose:c.lines, total:c.total, anticipo:c.abono, decoEspecial: deco ? deco.monto : 0, precioConfirmado:true, confirmadoEn:Date.now()};
+    const out = {desglose:c.lines, total:c.total, anticipo:c.abono, decoEspecial: deco ? deco.monto : 0, precioConfirmado:true, confirmadoEn:Date.now()};
+    if (c.abono > 0 && (!o || !o.abonoFecha || c.abono !== (Number(o.anticipo) || 0))) Object.assign(out, {abonoFecha: todayStr(), abonoAt: Date.now()});
+    return out;
   }
 
   /* ---------- Detail sheet ---------- */
@@ -1041,7 +1071,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
         ${o.decoEspecial ? `<dt>Deco. especial</dt><dd>${esc(crc(o.decoEspecial))}</dd>` : ""}
         <dt>Entrega</dt><dd>${esc(o.entrega)}${o.direccion ? ": " + esc(o.direccion) : ""}</dd>
         ${tel ? `<dt>Tel\u00e9fono</dt><dd><a href="tel:${esc(tel)}" style="color:inherit">${esc(tel.slice(0,4)+" "+tel.slice(4))}</a> \u00b7 <a href="https:\/\/wa.me/506${esc(tel)}" target="_blank" rel="noopener" style="color:inherit">WhatsApp</a></dd>` : ""}
-        <dt>Pago</dt><dd>Total ${esc(crc(o.total))} \u00b7 Abono ${esc(crc(o.anticipo))} \u00b7 Saldo ${esc(crc(saldo))}</dd>
+        <dt>Pago</dt><dd>Total ${esc(crc(o.total))} \u00b7 Abono ${esc(crc(o.anticipo))}${o.abonoFecha && Number(o.anticipo) > 0 ? " (recibido " + esc(fmtFecha(o.abonoFecha)) + ")" : ""} \u00b7 Saldo ${esc(crc(saldo))}</dd>
         ${o.status === "entregado" ? `<dt>Cobrado</dt><dd>${esc(pagoLabel(o))}${o.pago && o.pago.metodo === "Ambos" ? "" : o.pago ? " \u00b7 " + esc(crc(o.pago.total)) : ""} \u00b7 entregado ${esc(fmtD(new Date(entregaTs(o))))}</dd>` : ""}
         ${o.notas ? `<dt>Notas</dt><dd>${esc(o.notas)}</dd>` : ""}
         <dt>Origen</dt><dd>${esc(o.origen||"")}</dd>
@@ -1077,7 +1107,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       } else if (b.dataset.act === "close") sheet.close();
     };
     wireConfirm(o, async c => {
-      try{ await db.collection("orders").doc(o.id).update(confirmData(c)); toast("Precio confirmado guardado"); }
+      try{ await db.collection("orders").doc(o.id).update(confirmData(c, o)); toast("Precio confirmado guardado"); }
       catch(err){ toast("Se abri\u00f3 WhatsApp, pero no se pudo guardar el precio."); }
     });
     sheet.showModal();
@@ -1217,6 +1247,8 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       tipo: s.tipo, sabor: s.sabor, relleno: otro(s.relleno, s.dRelleno), topping: tops.join(", "),
       mensaje: s.mensaje, decoracion: s.deco, refImgs: [], refUrls, extras, extrasSinPrecio: sinPrecio,
       decoEspecial: 0, toppingExtra, total, anticipo, comprobantes: [], compUrls,
+      abonoFecha: anticipo > 0 ? String(s.at || "").slice(0, 10) : "",
+      abonoAt: anticipo > 0 && s.at ? new Date(String(s.at).replace(" ", "T")).getTime() || null : null,
       abonoRequerido: total > ABONO_UMBRAL || personalizada, notas: s.notas
     };
   }
@@ -1301,7 +1333,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     };
     wireConfirm(o, async c => {
       try{
-        const data = Object.assign({}, o, confirmData(c)); delete data.id;
+        const data = Object.assign({}, o, confirmData(c, o)); delete data.id;
         data.status = "pendiente"; data.createdAt = Date.now();
         await db.collection("orders").doc("web-" + o.webId).set(data);
         await db.doc("tally/" + o.webId).set({estado:"confirmado", orderId:"web-" + o.webId, at:Date.now()});
@@ -1327,7 +1359,9 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   function pagoLabel(o){
     if (o.pago) return o.pago.metodo === "Ambos" ? "SINPE " + crc(o.pago.sinpe) + " + Efectivo " + crc(o.pago.efectivo) : o.pago.metodo;
     if (o.status === "entregado") return "Pago sin registrar";
-    const ab = Number(o.anticipo)||0; return ab ? "Abono " + crc(ab) : "";
+    const ab = Number(o.anticipo)||0; if (!ab) return "";
+    if (!o.abonoFecha) return "Abono " + crc(ab);
+    const [y, m, d] = o.abonoFecha.split("-").map(Number); return "Abono " + crc(ab) + " \u00b7 " + d + " " + MONTHS[m - 1];
   }
   function histRow(o, cont){
     const p = o.producto || {};
