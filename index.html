@@ -989,6 +989,11 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       <button type="button" class="btn ghost small" data-addline style="margin:2px 0 10px">+ Agregar cargo</button>
       <div class="totals" id="confTotals"></div>
       <label class="f" style="margin-top:10px"><span class="lbl">Abono recibido (\u20a1)</span><input type="number" id="confAbono" min="0" step="100" value="${esc(o.anticipo||0)}"></label>
+      <div id="confFechaWrap"${Number(o.anticipo) > 0 ? "" : " hidden"}>
+        <label class="chk"><input type="checkbox" id="confHoy"${o.abonoFecha && Number(o.anticipo) > 0 ? "" : " checked"}><span>El abono se recibi\u00f3 hoy</span></label>
+        <label class="f" id="confFechaF"${o.abonoFecha && Number(o.anticipo) > 0 ? "" : " hidden"}><span class="lbl">Fecha en que se recibi\u00f3 el abono</span><input type="date" id="confFecha" max="${todayStr()}" value="${esc(o.abonoFecha || "")}"></label>
+        ${String(o.id || "").startsWith("web:") ? "" : `<button type="button" class="btn ghost small" id="saveAbono" style="margin:-2px 0 12px">Guardar abono</button>`}
+      </div>
       <a class="btn primary" id="waBtn" target="_blank" rel="noopener" style="width:100%">Confirmar y enviar por WhatsApp</a>
       <p class="hint" id="waHint" style="margin:8px 0 0"></p>
     </div>`;
@@ -997,7 +1002,12 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     const lines = $$("#confirmBox .cl").map(r => ({label:r.querySelector(".cl-l").value.trim(), monto:Number(r.querySelector(".cl-m").value)||0})).filter(l => l.label);
     const total = lines.reduce((a,l) => a + l.monto, 0);
     const abono = Number($("#confAbono").value)||0;
-    return {lines, total, abono, saldo:Math.max(total - abono, 0)};
+    let abonoFecha = "", abonoAt = null;
+    if (abono > 0){
+      if ($("#confHoy").checked){ abonoFecha = todayStr(); abonoAt = Date.now(); }
+      else if ($("#confFecha").value){ abonoFecha = $("#confFecha").value; const [y, m, d] = abonoFecha.split("-").map(Number); abonoAt = new Date(y, m - 1, d, 12, 0).getTime(); }
+    }
+    return {lines, total, abono, saldo:Math.max(total - abono, 0), abonoFecha, abonoAt};
   }
   function waMessage(o, c){
     const det = [
@@ -1022,27 +1032,43 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   function wireConfirm(o, onSend){
     const box = $("#confirmBox"); if (!box) return;
     const tel = String(o.telefono||"").replace(/\D/g,"");
-    const update = () => {
+    const update = e => {
+      const has = (Number($("#confAbono").value) || 0) > 0;
+      $("#confFechaWrap").hidden = !has;
+      $("#confFechaF").hidden = $("#confHoy").checked;
+      if (has && e && e.target && e.target.id === "confHoy" && !$("#confHoy").checked && !$("#confFecha").value) $("#confFecha").value = todayStr();
       const c = readConfirm();
       $("#confTotals").innerHTML = `<div class="grand"><span>Total confirmado</span><b>${esc(crc(c.total))}</b></div><div><span>Abono</span><b>\u2212 ${esc(crc(c.abono))}</b></div><div class="saldo"><span>Saldo al retirar</span><b>${esc(crc(c.saldo))}</b></div>`;
       const a = $("#waBtn");
-      if (tel.length === 8){ a.href = "https:\/\/wa.me/506" + tel + "?text=" + encodeURIComponent(waMessage(o, c)); a.removeAttribute("aria-disabled"); $("#waHint").textContent = "Se guarda el precio confirmado y se abre WhatsApp con el mensaje listo para enviar."; }
+      if (c.abono > 0 && !c.abonoFecha){ a.removeAttribute("href"); a.setAttribute("aria-disabled","true"); $("#waHint").textContent = "Elige la fecha en que se recibi\u00f3 el abono."; }
+      else if (tel.length === 8){ a.href = "https:\/\/wa.me/506" + tel + "?text=" + encodeURIComponent(waMessage(o, c)); a.removeAttribute("aria-disabled"); $("#waHint").textContent = "Se guarda el precio confirmado y se abre WhatsApp con el mensaje listo para enviar."; }
       else { a.removeAttribute("href"); a.setAttribute("aria-disabled","true"); $("#waHint").textContent = "Este pedido no tiene un tel\u00e9fono de 8 d\u00edgitos. Corr\u00edgelo en Editar pedido."; }
     };
     box.addEventListener("input", update);
-    box.addEventListener("click", e => {
+    box.addEventListener("change", update);
+    box.addEventListener("click", async e => {
+      if (e.target.closest("#saveAbono")){
+        const c = readConfirm(), b = e.target.closest("#saveAbono");
+        if (c.abono > 0 && !c.abonoFecha){ toast("Elige la fecha en que se recibi\u00f3 el abono."); return; }
+        const data = {anticipo: c.abono, abonoFecha: c.abonoFecha, abonoAt: c.abonoAt, updatedAt: Date.now()};
+        b.disabled = true;
+        try{ await db.collection("orders").doc(o.id).update(data); Object.assign(o, data); toast("Abono guardado"); openSheet(o); }
+        catch(err){ toast("No se pudo guardar. Intenta de nuevo."); b.disabled = false; }
+        return;
+      }
       if (e.target.closest("[data-addline]")){
         e.target.closest("[data-addline]").insertAdjacentHTML("beforebegin", `<div class="cl"><input type="text" class="cl-l" placeholder="Concepto" aria-label="Concepto"><input type="number" class="cl-m" min="0" step="100" value="0" aria-label="Monto"></div>`);
         update(); return;
       }
-      if (e.target.closest("#waBtn") && tel.length === 8) onSend(readConfirm());
+      if (e.target.closest("#waBtn") && tel.length === 8){ const c = readConfirm(); if (c.abono > 0 && !c.abonoFecha) return; onSend(c); }
     });
     update();
   }
   function confirmData(c, o){
     const deco = c.lines.find(l => norm(l.label) === norm("Decoraci\u00f3n especial"));
     const out = {desglose:c.lines, total:c.total, anticipo:c.abono, decoEspecial: deco ? deco.monto : 0, precioConfirmado:true, confirmadoEn:Date.now()};
-    if (c.abono > 0 && (!o || !o.abonoFecha || c.abono !== (Number(o.anticipo) || 0))) Object.assign(out, {abonoFecha: todayStr(), abonoAt: Date.now()});
+    if (c.abono > 0) Object.assign(out, {abonoFecha: c.abonoFecha || todayStr(), abonoAt: c.abonoAt || Date.now()});
+    else Object.assign(out, {abonoFecha: "", abonoAt: null});
     return out;
   }
 
