@@ -336,14 +336,12 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
         <div class="row">
           <label class="f"><span class="lbl">Fecha de entrega</span><input type="date" name="fecha"></label>
           <div class="f"><span class="lbl">Hora</span>
-            <div class="hora12">
-              <select id="hH" name="hH" aria-label="Hora"><option value="">Hora</option></select>
-              <select id="hM" aria-label="Minutos"></select>
-              <select id="hAP" aria-label="a.m. o p.m."><option value="am">a.m.</option><option value="pm">p.m.</option></select>
-            </div>
+            <select id="hSel" name="hSel" aria-label="Hora de entrega"></select>
             <input type="hidden" name="hora">
           </div>
         </div>
+        <p class="hint" id="horarioHint" style="margin:-4px 0 12px">Entregas de martes a sábado de 9:00 a.m. a 5:00 p.m. y domingos de 9:00 a.m. a 3:00 p.m. Lunes cerrado.</p>
+        <p class="hint err" id="lunesHint" style="margin:-4px 0 12px" hidden>Los lunes no hay entregas. Elige otra fecha.</p>
         <div class="seg" hidden>
           <label><input type="radio" name="entrega" value="Retira" checked><span>Retira en el local</span></label>
           <label><input type="radio" name="entrega" value="Envío"><span>Envío</span></label>
@@ -702,22 +700,30 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   }
   $("#prodSel").addEventListener("change", updateTotals);
 
-  $("#hH").insertAdjacentHTML("beforeend", Array.from({length:12}, (_,i) => `<option value="${i+1}">${i+1}</option>`).join(""));
-  $("#hM").innerHTML = Array.from({length:12}, (_,i) => `<option value="${pad(i*5)}">${pad(i*5)}</option>`).join("");
-  function syncHora(){
-    const h = Number($("#hH").value);
-    if (!h){ form.hora.value = ""; return; }
-    let h24 = h % 12; if ($("#hAP").value === "pm") h24 += 12;
-    form.hora.value = pad(h24) + ":" + $("#hM").value;
+  /* Delivery hours in minutes from midnight, by weekday (0 = Sunday). Monday closed. */
+  const HORARIO = {0: [9*60, 15*60], 1: null, 2: [9*60, 17*60], 3: [9*60, 17*60], 4: [9*60, 17*60], 5: [9*60, 17*60], 6: [9*60, 17*60]};
+  const HORA_PASO = 15;
+  function horarioDe(fecha){
+    const [y, m, d] = String(fecha || "").split("-").map(Number);
+    if (!y) return HORARIO[2];
+    return HORARIO[new Date(y, m - 1, d).getDay()];
   }
-  function setHora(v){
-    const p = hora12parts(v);
-    if (!p){ $("#hH").value = ""; $("#hM").value = "00"; $("#hAP").value = "am"; syncHora(); return; }
-    $("#hH").value = String(p.h);
-    if (![...$("#hM").options].some(o => o.value === p.m)) $("#hM").insertAdjacentHTML("beforeend", `<option value="${p.m}">${p.m}</option>`);
-    $("#hM").value = p.m; $("#hAP").value = p.ap === "p.m." ? "pm" : "am"; syncHora();
+  function fillHoras(keep, allowOutside){
+    const r = horarioDe(form.fecha.value), sel = $("#hSel");
+    const cur = keep !== undefined ? keep : (form.hora.value || "");
+    const vals = [];
+    if (r) for (let t = r[0]; t <= r[1]; t += HORA_PASO) vals.push(pad(Math.floor(t / 60)) + ":" + pad(t % 60));
+    let opts = `<option value="">${r ? "Elegir hora\u2026" : "Lunes cerrado"}</option>` + vals.map(v => `<option value="${v}">${fmt12(v)}</option>`).join("");
+    let ok = vals.includes(cur);
+    if (cur && !ok && allowOutside){ opts += `<option value="${cur}">${fmt12(cur)} (fuera de horario)</option>`; ok = true; }
+    sel.innerHTML = opts; sel.value = ok ? cur : "";
+    $("#lunesHint").hidden = !!r;
+    syncHora();
   }
-  ["#hH","#hM","#hAP"].forEach(s => $(s).addEventListener("change", syncHora));
+  function syncHora(){ form.hora.value = $("#hSel").value; }
+  function setHora(v){ fillHoras(parseHora(v) || "", true); }
+  $("#hSel").addEventListener("change", syncHora);
+  form.fecha.addEventListener("change", () => fillHoras());
   function toggleDir(){ $("#dirWrap").hidden = form.entrega.value !== "Env\u00edo"; }
   $$('input[name=entrega]').forEach(r => r.addEventListener("change", toggleDir));
 
@@ -781,7 +787,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
 
   function resetForm(){
     form.reset(); editingId = null; refIds = []; payIds = [];
-    form.fecha.value = todayStr(); form.cantidad.value = 1;
+    form.fecha.value = todayStr(); form.cantidad.value = 1; fillHoras("");
     $("#editBanner").hidden = true; $("#formTitle").textContent = "Nuevo pedido";
     $("#saveBtn").textContent = "Guardar pedido";
     form.telefono.classList.remove("bad"); $("#telHint").hidden = true;
@@ -814,7 +820,8 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     if (!o.cliente) return ["cliente","Escribe el nombre del cliente."];
     if (o.telefono.length !== 8) return ["telefono","El tel\u00e9fono debe tener 8 d\u00edgitos."];
     if (!o.fecha) return ["fecha","Elige la fecha de entrega."];
-    if (!o.hora) return ["hH","Elige la hora de entrega."];
+    if (!horarioDe(o.fecha) && !editingId) return ["fecha","Los lunes no hay entregas. Elige otra fecha."];
+    if (!o.hora) return ["hSel","Elige la hora de entrega."];
     if (!o.producto) return ["producto","Elige la forma y el tama\u00f1o del queque."];
     if (o.anticipo > 0 && !o.abonoFecha) return ["abonoFecha","Elige la fecha en que se recibi\u00f3 el abono."];
     return null;
@@ -1333,6 +1340,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
         ${o.notas ? `<dt>Notas</dt><dd>${esc(o.notas)}</dd>` : ""}
       </dl>
       ${links ? `<p class="links">${links}</p>` : ""}
+      ${tel ? `<a class="btn ghost" style="width:100%;margin:0 0 14px" target="_blank" rel="noopener" href="https:\/\/wa.me/506${esc(tel)}?text=${encodeURIComponent("\u00a1Hola " + String(o.cliente || "").split(" ")[0] + "! Le escribimos de Pasteler\u00eda Marlen's sobre su pedido de queque para el " + fmtFecha(o.fecha) + " a las " + fmt12(o.hora) + " ")}">Escribir al WhatsApp</a>` : ""}
       ${confirmBlockHTML(o)}
       <div class="moves"><button class="btn st-pendiente" data-web="ok">Confirmar sin enviar</button><button class="btn danger" data-web="no">Rechazar</button></div>
       <div class="foot"><span></span><button class="btn ghost small" data-act="close">Cerrar</button></div>`;
