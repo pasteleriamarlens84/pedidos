@@ -316,12 +316,15 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
 </header>
 
 <main>
+  <div id="verNotice" class="notice soft" hidden>Hay una versión nueva de la app. <button class="btn ghost small" type="button" id="verBtn" style="margin-left:8px">Actualizar ahora</button></div>
+  <div id="clockNotice" class="notice soft" hidden>La hora de este dispositivo está mal. La app usa la hora correcta de todos modos, pero conviene corregirla en Ajustes: fecha y hora automáticas, zona de Costa Rica.</div>
   <div id="dbNotice" class="notice" hidden>No se pudo conectar con la hoja de pedidos. Revisa el internet y recarga la página. Si sigue igual, confirma que entraste con la cuenta de Google de la pastelería.</div>
 
   <!-- ===== FORM ===== -->
   <section id="view-form" class="form-wrap">
     <h1 id="formTitle">Nuevo pedido</h1>
     <p class="lead">Anota el pedido y aparece al instante en la pantalla de la cocina.</p>
+    <p class="hint" id="catLoading" hidden>Cargando tamaños, rellenos y precios…</p>
     <div class="notice soft" id="noCatalog" hidden>Todavía no hay productos con precio. Agrégalos en la pestaña Precios.</div>
     <div class="editing-banner" id="editBanner" hidden>
       <span>Estás editando un pedido existente.</span>
@@ -525,7 +528,20 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const crc = n => "\u20a1" + Math.round(Number(n)||0).toLocaleString("es-CR");
   const pad = n => String(n).padStart(2,"0");
-  const todayStr = (d=new Date()) => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+  const BUILD = "2026-11-11.2";
+  /* Timestamps use the server clock, so a device with a wrong clock cannot shift them. */
+  let skewMs = 0;
+  try{ skewMs = Number(localStorage.getItem("marlenSkew")) || 0; }catch(e){}
+  const nowMs = () => Date.now() + skewMs;
+  /* A Date whose getHours(), getDate()... read Costa Rica time (UTC-6), whatever zone the device is set to. */
+  const crDate = ms => { const d = new Date(ms); return new Date(d.getTime() + (d.getTimezoneOffset() - 360) * 60000); };
+  const todayStr = (d=crDate(nowMs())) => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+  /* Delivery moment of an order, always read as Costa Rica time (UTC-6, no daylight saving). */
+  const dueOf = (fecha, hora) => {
+    const [y, m, d] = String(fecha || "").slice(0, 10).split("-").map(Number);
+    const [hh, mm] = String(hora || "").split(":").map(Number);
+    return y && m && d ? Date.UTC(y, m - 1, d, (hh || 0) + 6, mm || 0) : 0;
+  };
   const BLANK = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
   const photoCache = {}, photoLoading = {};
   function blob(id){
@@ -548,6 +564,36 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
 
   let db = null, assets = null, orders = [], catalog = EMPTY_CAT, catalogLoaded = false, pricesDirty = false;
   let editingId = null, seen = new Set(), firstLoad = true, lockedAbonos = false;
+  /* While an order is being edited: the order as saved, and what its price depended on. */
+  let editOrig = null, editSig = "";
+  let baseCatalog = EMPTY_CAT, lastCatJSON = "";
+  function normCat(d){
+    d = d || {};
+    return {
+      productos: Array.isArray(d.productos) ? d.productos : [],
+      extras: Array.isArray(d.extras) ? d.extras : [],
+      sabores: Array.isArray(d.sabores) && d.sabores.length ? d.sabores : EMPTY_CAT.sabores,
+      rellenos: Array.isArray(d.rellenos) ? d.rellenos : [],
+      toppings: Array.isArray(d.toppings) ? d.toppings : [],
+      toppingExtra: d.toppingExtra && typeof d.toppingExtra === "object" ? d.toppingExtra : {}
+    };
+  }
+  /* The catalog the form uses: the saved one plus whatever the order being edited has that is no longer in Precios. */
+  function applyCatalog(){
+    let c = baseCatalog;
+    if (editOrig){
+      const p = editOrig.producto, prods = c.productos.slice(), exs = c.extras.slice();
+      if (p && p.forma && !prods.some(x => prodKey(x) === prodKey(p))) prods.push(Object.assign({}, p, {fuera: true}));
+      (editOrig.extras || []).forEach(e => { if (e && e.nombre && !exs.some(x => x.nombre === e.nombre)) exs.push({nombre: e.nombre, precio: Number(e.precio) || 0, fuera: true}); });
+      c = Object.assign({}, c, {productos: prods, extras: exs});
+    }
+    catalog = c;
+  }
+  const origExtra = nombre => editOrig ? (editOrig.extras || []).find(x => x.nombre === nombre) : null;
+  const esProdOrig = p => !!(p && editOrig && editOrig.producto && editOrig.producto.forma && prodKey(editOrig.producto) === prodKey(p));
+  const precioProd = p => esProdOrig(p) ? Number(editOrig.producto.precio) || 0 : Number(p.precio) || 0;
+  const precioExtra = e => { const x = origExtra(e.nombre); return x ? Number(x.precio) || 0 : Number(e.precio) || 0; };
+  const FUERA = " (ya no est\u00e1 en Precios)";
   let refIds = [], payIds = [], uploading = 0;
   let dayFilter = "hoy", soundOn = false, audioCtx = null;
 
@@ -596,10 +642,11 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     const groups = {};
     catalog.productos.forEach(p => (groups[p.forma] = groups[p.forma] || []).push(p));
     sel.innerHTML = `<option value="">Elegir\u2026</option>` + Object.keys(groups).map(f =>
-      `<optgroup label="${esc(f)}">` + groups[f].map(p => `<option value="${esc(prodKey(p))}">${esc(prodLabel(p))} \u00b7 ${esc(crc(p.precio))}</option>`).join("") + `</optgroup>`
+      `<optgroup label="${esc(f)}">` + groups[f].map(p => `<option value="${esc(prodKey(p))}">${esc(prodLabel(p))} \u00b7 ${esc(crc(precioProd(p)))}${p.fuera ? esc(FUERA) : ""}</option>`).join("") + `</optgroup>`
     ).join("");
     if (prev) sel.value = prev;
     $("#noCatalog").hidden = !catalogLoaded || catalog.productos.length > 0;
+    $("#catLoading").hidden = catalogLoaded || catalog.productos.length > 0;
 
     const checkedSabor = $('input[name=sabor]:checked')?.value;
     $("#saborSeg").innerHTML = (catalog.sabores.length ? catalog.sabores : ["Vainilla","Chocolate"]).map((s,i) =>
@@ -616,7 +663,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     const state = readExtras();
     $("#extrasBox").innerHTML = catalog.extras.length ? catalog.extras.map((e,i) => {
       const s = state.find(x => x.nombre === e.nombre);
-      return `<label class="ex"><input type="checkbox" data-i="${i}"${s ? " checked" : ""}><span>${esc(e.nombre)}</span><span class="p">${esc(crc(e.precio))}</span><input type="number" class="exq" data-i="${i}" min="1" value="${s ? s.cantidad : 1}" aria-label="Cantidad"${s ? "" : " disabled"}></label>`;
+      return `<label class="ex"><input type="checkbox" data-i="${i}"${s ? " checked" : ""}><span>${esc(e.nombre)}${e.fuera ? esc(FUERA) : ""}</span><span class="p">${esc(crc(precioExtra(e)))}</span><input type="number" class="exq" data-i="${i}" min="1" value="${s ? s.cantidad : 1}" aria-label="Cantidad"${s ? "" : " disabled"}></label>`;
     }).join("") : `<p class="hint" style="margin:0">No hay extras configurados.</p>`;
     updateTotals();
   }
@@ -659,10 +706,18 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     return $$("#extrasBox .ex").map(row => {
       const cb = row.querySelector("input[type=checkbox]"); if (!cb || !cb.checked) return null;
       const e = catalog.extras[cb.dataset.i]; if (!e) return null;
-      return {nombre:e.nombre, precio:Number(e.precio)||0, cantidad:Math.max(1, parseInt(row.querySelector(".exq").value,10)||1)};
+      return {nombre:e.nombre, precio:precioExtra(e), cantidad:Math.max(1, parseInt(row.querySelector(".exq").value,10)||1)};
     }).filter(Boolean);
   }
-  function selectedProduct(){ return catalog.productos.find(p => prodKey(p) === $("#prodSel").value) || null; }
+  function selectedProduct(){
+    const p = catalog.productos.find(x => prodKey(x) === $("#prodSel").value) || null;
+    return p ? Object.assign({}, p, {precio: precioProd(p)}) : null;   /* an order being edited keeps the price it was taken with */
+  }
+  /* Everything the price depends on. If it is the same as when the edit started, the saved price stays untouched. */
+  function priceSig(){
+    return JSON.stringify([$("#prodSel").value, Math.max(1, parseInt(form.cantidad.value,10)||1), readExtras().map(e => e.nombre + "\u00d7" + e.cantidad).sort(),
+      $$('input[name=topping]:checked').length, Number(form.decoEspecial.value)||0]);
+  }
 
   function computeTotals(){
     const p = selectedProduct();
@@ -674,11 +729,13 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     const cat = p ? (p.categoria || categoriaDefault(p)) : "";
     const topUnit = Number((catalog.toppingExtra||{})[cat]) || 0;
     const topExtra = Math.max(nTop - 1, 0) * topUnit;
-    const total = base + ex + deco + topExtra;
+    let total = base + ex + deco + topExtra, ajuste = 0;
+    const mismo = !!editOrig && !!editSig && priceSig() === editSig && Number.isFinite(Number(editOrig.total));
+    if (mismo){ ajuste = Number(editOrig.total) - total; total = Number(editOrig.total); }
     const abono = Number(form.anticipo.value)||0;
     const personalizada = deco > 0 || !!form.decoracion.value.trim() || refIds.length > 0;
     const requerido = total > ABONO_UMBRAL || personalizada;
-    return {p, cant, base, ex, deco, nTop, cat, topUnit, topExtra, total, abono, saldo:Math.max(total-abono,0), requerido, falta: requerido && abono < ABONO_MIN};
+    return {p, cant, base, ex, deco, nTop, cat, topUnit, topExtra, total, ajuste, mismo, abono, saldo:Math.max(total-abono,0), requerido, falta: requerido && abono < ABONO_MIN};
   }
   function updateTotals(){
     const t = computeTotals();
@@ -687,6 +744,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       ${t.ex ? `<div><span>Extras</span><b>${esc(crc(t.ex))}</b></div>` : ""}
       ${t.nTop > 1 ? `<div><span>Toppings adicionales (${t.nTop - 1} \u00d7 ${esc(crc(t.topUnit))}, queque ${esc((t.cat||"").toLowerCase())})</span><b>${esc(crc(t.topExtra))}</b></div>` : ""}
       ${t.deco ? `<div><span>Decoraci\u00f3n especial</span><b>${esc(crc(t.deco))}</b></div>` : ""}
+      ${t.ajuste ? `<div><span>Otros cargos o ajustes ya confirmados</span><b>${t.ajuste < 0 ? "\u2212 " : ""}${esc(crc(Math.abs(t.ajuste)))}</b></div>` : ""}
       <div class="grand"><span>Total</span><b>${esc(crc(t.total))}</b></div>
       ${t.abono ? `<div><span>Abono</span><b>\u2212 ${esc(crc(t.abono))}</b></div>` : ""}
       <div class="saldo"><span>Saldo pendiente</span><b>${esc(crc(t.saldo))}</b></div>
@@ -707,10 +765,10 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   $("#abonoHoy").addEventListener("change", toggleAbono);
   function abonoFields(monto){
     if (!(monto > 0)) return {abonoFecha: "", abonoAt: null};
-    if ($("#abonoHoy").checked) return {abonoFecha: todayStr(), abonoAt: Date.now()};
+    if ($("#abonoHoy").checked) return {abonoFecha: todayStr(), abonoAt: nowMs()};
     const f = form.abonoFecha.value; if (!f) return {abonoFecha: "", abonoAt: null};
     const [y, m, d] = f.split("-").map(Number);
-    return {abonoFecha: f, abonoAt: new Date(y, m - 1, d, 12, 0).getTime()};
+    return {abonoFecha: f, abonoAt: dueOf(f, "12:00")};
   }
   $("#prodSel").addEventListener("change", updateTotals);
 
@@ -807,6 +865,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
 
   function resetForm(){
     form.reset(); editingId = null; refIds = []; payIds = [];
+    editOrig = null; editSig = ""; applyCatalog();
     lockedAbonos = false; form.anticipo.readOnly = false; $("#abonoLock").hidden = true;
     form.fecha.value = todayStr(); form.cantidad.value = 1; fillHoras("");
     $("#editBanner").hidden = true; $("#formTitle").textContent = "Nuevo pedido";
@@ -825,7 +884,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     return Object.assign({
       cliente: form.cliente.value.trim(), telefono: digits(form.telefono.value),
       origen: form.origen.value, fecha, hora,
-      dueAt: new Date(y, (m||1)-1, d||1, hh||0, mm||0).getTime(),
+      dueAt: dueOf(fecha, hora),
       entrega: form.entrega.value, direccion: form.entrega.value === "Env\u00edo" ? form.direccion.value.trim() : "",
       producto: t.p ? {forma:t.p.forma, porciones:t.p.porciones, precio:Number(t.p.precio)||0} : null,
       cantidad: t.cant,
@@ -844,7 +903,11 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     if (!horarioDe(o.fecha) && !editingId) return ["fecha","Los lunes no hay entregas. Elige otra fecha."];
     if (!o.hora) return ["hSel","Elige la hora de entrega."];
     if (!o.producto) return ["producto","Elige la forma y el tama\u00f1o del queque."];
-    if (o.anticipo > 0 && !o.abonoFecha) return ["abonoFecha","Elige la fecha en que se recibi\u00f3 el abono."];
+    if (Number(form.decoEspecial.value) < 0) return ["decoEspecial","El monto de la decoraci\u00f3n no puede ser negativo."];
+    if (Number(form.anticipo.value) < 0) return ["anticipo","El abono no puede ser negativo."];
+    if (!lockedAbonos && o.anticipo > o.total) return ["anticipo","El abono no puede ser mayor que el total del pedido."];
+    if (lockedAbonos && editOrig && abonado(editOrig) > o.total) return ["producto","El total no puede quedar por debajo de lo ya abonado (" + crc(abonado(editOrig)) + ")."];
+    if (o.anticipo > 0 && !lockedAbonos && !o.abonoFecha) return ["abonoFecha","Elige la fecha en que se recibi\u00f3 el abono."];
     return null;
   }
 
@@ -852,7 +915,22 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     e.preventDefault();
     if (!db){ toast("Sin conexi\u00f3n: el pedido no se guard\u00f3."); return; }
     if (uploading){ toast("Espera a que terminen de subir las fotos."); return; }
-    const o = readForm(); const bad = validate(o);
+    const o = readForm(), t = computeTotals(); let reconfirmar = false;
+    if (editingId && editOrig){
+      if (t.mismo){
+        /* Nothing that affects the price changed: the saved price, product and extras stay exactly as they were. */
+        o.total = editOrig.total;
+        if (editOrig.producto) o.producto = editOrig.producto;
+        o.extras = editOrig.extras || [];
+        if (editOrig.toppingExtra != null) o.toppingExtra = editOrig.toppingExtra;
+      } else {
+        if (editOrig.status === "entregado"){ toast("Este pedido ya se cobr\u00f3. Para cambiar el precio, primero deshaga la entrega."); return; }
+        if ((editOrig.desglose || []).length || editOrig.precioConfirmado){ o.desglose = []; o.precioConfirmado = false; reconfirmar = true; }
+      }
+      /* Orders delivered before the delivery date was stored: keep them on their day in Contabilidad. */
+      if (editOrig.status === "entregado" && !editOrig.entregadoAt) o.entregadoAt = entregaTs(editOrig);
+    }
+    const bad = validate(o);
     if (bad){ toast(bad[1]); form[bad[0]].focus(); if (bad[0] === "telefono") form.telefono.classList.add("bad"); return; }
     if (editingId && lockedAbonos){ delete o.anticipo; delete o.abonoFecha; delete o.abonoAt; }
     else {
@@ -862,11 +940,11 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     const btn = $("#saveBtn"); btn.disabled = true;
     try{
       if (editingId){
-        o.updatedAt = Date.now();
+        o.updatedAt = nowMs();
         await db.collection("orders").doc(editingId).update(o);
-        toast("Pedido actualizado");
+        toast(reconfirmar ? "Pedido actualizado. Cambi\u00f3 el precio: revise los cargos y conf\u00edrmelo de nuevo." : "Pedido actualizado");
       } else {
-        o.status = "pendiente"; o.createdAt = Date.now();
+        o.status = "pendiente"; o.createdAt = nowMs();
         await db.collection("orders").add(o);
         toast("Pedido guardado");
       }
@@ -878,20 +956,14 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
 
   function loadIntoForm(o){
     resetForm(); editingId = o.id;
+    editOrig = JSON.parse(JSON.stringify(o)); applyCatalog(); renderCatalogControls();
     form.cliente.value = o.cliente||"";
     const d = digits(o.telefono); form.telefono.value = d.length > 4 ? d.slice(0,4)+" "+d.slice(4) : d;
     $$('input[name=origen]').forEach(r => r.checked = r.value === o.origen);
     form.fecha.value = o.fecha||""; setHora(o.hora);
     $$('input[name=entrega]').forEach(r => r.checked = r.value === o.entrega);
     form.direccion.value = o.direccion||"";
-    if (o.producto){
-      const k = prodKey(o.producto);
-      if (!catalog.productos.some(p => prodKey(p) === k)){
-        $("#prodSel").insertAdjacentHTML("beforeend", `<option value="${esc(k)}">${esc(prodLabel(o.producto))} (ya no est\u00e1 en el cat\u00e1logo)</option>`);
-        catalog = Object.assign({}, catalog, {productos: catalog.productos.concat(o.producto)});
-      }
-      $("#prodSel").value = k;
-    }
+    if (o.producto && o.producto.forma) $("#prodSel").value = prodKey(o.producto);
     form.cantidad.value = o.cantidad || 1;
     $$('input[name=tipo]').forEach(r => r.checked = r.value === o.tipo);
     if (o.sabor && !$$('input[name=sabor]').some(r => r.value === o.sabor))
@@ -908,7 +980,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     form.anticipo.value = o.anticipo || ""; form.notas.value = o.notas||"";
     if ((Number(o.anticipo) || 0) > 0){
       $("#abonoHoy").checked = false;
-      form.abonoFecha.value = o.abonoFecha || (o.createdAt ? todayStr(new Date(o.createdAt)) : "");
+      form.abonoFecha.value = o.abonoFecha || (o.createdAt ? todayStr(crDate(o.createdAt)) : "");
     } else { $("#abonoHoy").checked = true; form.abonoFecha.value = ""; }
     const abL = abonosDe(o);
     lockedAbonos = abL.length > 1 || o.status === "entregado";
@@ -919,12 +991,13 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     refIds = (o.refImgs||[]).slice(); payIds = (o.comprobantes||[]).slice();
     $("#editBanner").hidden = false; $("#formTitle").textContent = "Editar pedido";
     $("#saveBtn").textContent = "Guardar cambios";
+    editSig = priceSig();
     renderAllPhotos(); toggleDir(); updateTotals(); showView("form"); window.scrollTo(0,0);
   }
 
   /* ---------- Kitchen ---------- */
   function tickClock(){
-    const d = new Date();
+    const d = crDate(nowMs());
     $("#clock").innerHTML = `${fmt12html(pad(d.getHours()) + ":" + pad(d.getMinutes()))}<small>${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}</small>`;
   }
   setInterval(() => { tickClock(); if (!$("#view-kitchen").hidden) renderBoard(); }, 30000);
@@ -939,12 +1012,12 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   function dayLabel(fecha){
     if (!fecha) return "";
     if (fecha === todayStr()) return "Hoy";
-    if (fecha === todayStr(new Date(Date.now()+864e5))) return "Ma\u00f1ana";
+    if (fecha === todayStr(crDate(nowMs()+864e5))) return "Ma\u00f1ana";
     const [y,m,d] = fecha.split("-").map(Number); const dt = new Date(y,m-1,d);
     return `${DAYS[dt.getDay()]} ${d} ${MONTHS[m-1]}`;
   }
   function inFilter(o){
-    const now = new Date(); const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(); const day = 864e5;
+    const start = dueOf(todayStr(), "00:00"), day = 864e5;
     if (o.dueAt < start) return true;
     if (dayFilter === "hoy") return o.dueAt < start + day;
     if (dayFilter === "manana") return o.dueAt >= start + day && o.dueAt < start + 2*day;
@@ -957,13 +1030,13 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     return "Sin producto";
   }
   function payTag(o){
-    const saldo = Math.max((o.total||0)-(o.anticipo||0),0);
-    if (o.abonoRequerido && (o.anticipo||0) < ABONO_MIN) return `<span class="tag warn">Falta abono</span>`;
+    const saldo = saldoDe(o);
+    if (o.abonoRequerido && abonado(o) < ABONO_MIN) return `<span class="tag warn">Falta abono</span>`;
     if (saldo > 0) return `<span class="tag">Cobrar ${esc(crc(saldo))}</span>`;
     return o.total ? `<span class="tag">Pagado</span>` : "";
   }
   function cardHTML(o){
-    const now = Date.now();
+    const now = nowMs();
     const late = o.status !== "listo" && o.dueAt < now;
     const soon = !late && o.status !== "listo" && o.dueAt - now < 2*3600e3;
     const spec = [o.tipo, o.sabor].filter(Boolean).join(" \u00b7 ");
@@ -1044,8 +1117,8 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     const abono = Number($("#confAbono").value)||0, ro = $("#confAbono").readOnly;
     let abonoFecha = "", abonoAt = null;
     if (abono > 0 && !ro){
-      if ($("#confHoy").checked){ abonoFecha = todayStr(); abonoAt = Date.now(); }
-      else if ($("#confFecha").value){ abonoFecha = $("#confFecha").value; const [y, m, d] = abonoFecha.split("-").map(Number); abonoAt = new Date(y, m - 1, d, 12, 0).getTime(); }
+      if ($("#confHoy").checked){ abonoFecha = todayStr(); abonoAt = nowMs(); }
+      else if ($("#confFecha").value){ abonoFecha = $("#confFecha").value; const [y, m, d] = abonoFecha.split("-").map(Number); abonoAt = dueOf(abonoFecha, "12:00"); }
     }
     return {lines, total, abono, saldo:Math.max(total - abono, 0), abonoFecha, abonoAt, ro};
   }
@@ -1099,10 +1172,10 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   }
   function confirmData(c, o){
     const deco = c.lines.find(l => norm(l.label) === norm("Decoraci\u00f3n especial"));
-    const out = {desglose:c.lines, total:c.total, decoEspecial: deco ? deco.monto : 0, precioConfirmado:true, confirmadoEn:Date.now()};
+    const out = {desglose:c.lines, total:c.total, decoEspecial: deco ? deco.monto : 0, precioConfirmado:true, confirmadoEn:nowMs()};
     if (c.ro) return out;
     out.anticipo = c.abono;
-    if (c.abono > 0) Object.assign(out, {abonoFecha: c.abonoFecha || todayStr(), abonoAt: c.abonoAt || Date.now()});
+    if (c.abono > 0) Object.assign(out, {abonoFecha: c.abonoFecha || todayStr(), abonoAt: c.abonoAt || nowMs()});
     else Object.assign(out, {abonoFecha: "", abonoAt: null});
     return out;
   }
@@ -1124,7 +1197,9 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   const sheet = $("#sheet"), zoom = $("#zoom");
   function openSheet(o){
     const saldo = saldoDe(o), abL = abonosDe(o);
-    const moves = ["pendiente","preparacion","listo","entregado"].filter(s => s !== o.status)
+    const cerrado = o.status === "entregado" || o.status === "cancelado";
+    const moves = o.status === "entregado" ? `<button class="btn ghost" data-act="undo">Deshacer la entrega</button>`
+      : ["pendiente","preparacion","listo","entregado"].filter(s => s !== o.status && !(s === "entregado" && o.status === "cancelado"))
       .map(s => `<button class="btn st-${s}" data-move="${s}">${s === "entregado" ? "Marcar entregado" : "Mover a " + STATUS[s].toLowerCase()}</button>`).join("");
     const extras = (o.extras||[]).map(e => `${esc(e.cantidad)}\u00d7 ${esc(e.nombre)} (${esc(crc(e.precio*e.cantidad))})`).join("<br>");
     const imgs = (o.refImgs||[]).map((id,i) => `<figure><img src="${esc(blob(id))}" data-pid="${esc(id)}" alt="Referencia ${i+1}" data-zoom><figcaption>Referencia</figcaption></figure>`).join("")
@@ -1147,14 +1222,14 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
         ${tel ? `<dt>Tel\u00e9fono</dt><dd><a href="tel:${esc(tel)}" style="color:inherit">${esc(tel.slice(0,4)+" "+tel.slice(4))}</a> \u00b7 <a href="https:\/\/wa.me/506${esc(tel)}" target="_blank" rel="noopener" style="color:inherit">WhatsApp</a></dd>` : ""}
         <dt>Pago</dt><dd>Total ${esc(crc(o.total))} \u00b7 Abonado ${esc(crc(abonado(o)))} \u00b7 Saldo ${esc(crc(saldo))}</dd>
         ${abL.length ? `<dt>Abonos</dt><dd>${abL.map(a => esc(crc(a.monto) + " \u00b7 " + a.metodo + (a.fecha ? " \u00b7 " + fmtFecha(a.fecha) : ""))).join("<br>")}</dd>` : ""}
-        ${o.status === "entregado" ? `<dt>Cobrado</dt><dd>${esc(pagoLabel(o))}${o.pago && o.pago.metodo === "Ambos" ? "" : o.pago ? " \u00b7 " + esc(crc(o.pago.total)) : ""} \u00b7 entregado ${esc(fmtD(new Date(entregaTs(o))))}${o.pago && o.pago.cobro && o.pago.cobro.vuelto ? "<br>Al entregar: " + esc(crc(o.pago.cobro.monto)) + " (se dio vuelto de " + esc(crc(o.pago.cobro.vuelto)) + ")" : ""}</dd>` : ""}
+        ${o.status === "entregado" ? `<dt>Cobrado</dt><dd>${esc(pagoLabel(o))}${o.pago && o.pago.metodo === "Ambos" ? "" : o.pago ? " \u00b7 " + esc(crc(o.pago.total)) : ""} \u00b7 entregado ${esc(fmtD(crDate(entregaTs(o))))}${o.pago && o.pago.cobro && o.pago.cobro.vuelto ? "<br>Al entregar: " + esc(crc(o.pago.cobro.monto)) + " (se dio vuelto de " + esc(crc(o.pago.cobro.vuelto)) + ")" : ""}</dd>` : ""}
         ${o.notas ? `<dt>Notas</dt><dd>${esc(o.notas)}</dd>` : ""}
         <dt>Origen</dt><dd>${esc(o.origen||"")}</dd>
       </dl>
       ${imgs ? `<div class="imgs">${imgs}</div>` : ""}
       ${(o.refUrls||[]).length || (o.compUrls||[]).length ? `<div class="imgs">${urlFigs(o.refUrls, "Referencia")}${urlFigs(o.compUrls, "Comprobante")}</div>` : ""}
       ${o.precioConfirmado ? `<p class="hint" style="color:var(--mint);font-weight:600">Precio confirmado y enviado al cliente.</p>` : ""}
-      ${confirmBlockHTML(o)}
+      ${cerrado ? "" : confirmBlockHTML(o)}
       <div class="moves">${moves}</div>
       <div class="foot">
         <button class="btn ghost small" data-act="edit">Editar pedido</button>
@@ -1170,16 +1245,23 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       if (b.dataset.move === "entregado"){ showCobroForm(o); return; }
       if (b.dataset.act === "pay"){ showCobroForm(o); return; }
       if (b.dataset.act === "abono"){ showAbonoForm(o); return; }
+      if (b.dataset.act === "undo"){
+        if (b.dataset.confirm !== "1"){ b.dataset.confirm = "1"; b.textContent = "Toca otra vez: vuelve a Listo y se borra el cobro"; return; }
+        b.disabled = true;
+        try{ await db.collection("orders").doc(o.id).update({status:"listo", pago:null, entregadoAt:null, updatedAt:nowMs()}); sheet.close(); toast("Entrega deshecha. El pedido volvi\u00f3 a Listo."); }
+        catch(err){ toast("No se pudo cambiar. Intenta de nuevo."); b.disabled = false; }
+        return;
+      }
       if (b.dataset.move){
         b.disabled = true;
-        try{ await db.collection("orders").doc(o.id).update({status:b.dataset.move, updatedAt:Date.now()}); sheet.close();
+        try{ await db.collection("orders").doc(o.id).update({status:b.dataset.move, updatedAt:nowMs()}); sheet.close();
           toast(b.dataset.move === "entregado" ? "Pedido entregado" : "Movido a " + STATUS[b.dataset.move].toLowerCase()); }
         catch(err){ toast("No se pudo cambiar. Intenta de nuevo."); b.disabled = false; }
       } else if (b.dataset.act === "edit"){ sheet.close(); loadIntoForm(o); }
       else if (b.dataset.act === "del"){
         if (b.dataset.confirm !== "1"){ b.dataset.confirm = "1"; b.textContent = "Toca otra vez para confirmar"; return; }
         try{
-          await db.collection("orders").doc(o.id).update({status:"cancelado", canceladoAt:Date.now(), updatedAt:Date.now()}); sheet.close(); toast("Pedido cancelado");
+          await db.collection("orders").doc(o.id).update({status:"cancelado", canceladoAt:nowMs(), updatedAt:nowMs()}); sheet.close(); toast("Pedido cancelado");
         }catch(err){ toast("No se pudo cancelar. Intenta de nuevo."); }
       } else if (b.dataset.act === "close") sheet.close();
     };
@@ -1196,12 +1278,12 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   function prodRow(p={}){ const c = p.categoria || (p.porciones ? categoriaDefault(p) : "Peque\u00f1o"); return `<tr><td><input type="text" class="pf" value="${esc(p.forma)}" aria-label="Forma"></td><td><input type="number" class="pp" min="1" value="${esc(p.porciones)}" aria-label="Porciones"></td><td><select class="pc" aria-label="Tama\u00f1o">${CATS.map(x => `<option${x === c ? " selected" : ""}>${x}</option>`).join("")}</select></td><td><input type="number" class="pr" min="0" step="100" value="${esc(p.precio)}" aria-label="Precio"></td><td class="rmc"><button type="button" class="rm" aria-label="Quitar">\u00d7</button></td></tr>`; }
   function extraRow(e={}){ return `<tr><td><input type="text" class="en" value="${esc(e.nombre)}" aria-label="Extra"></td><td><input type="number" class="ep" min="0" step="100" value="${esc(e.precio)}" aria-label="Precio"></td><td class="rmc"><button type="button" class="rm" aria-label="Quitar">\u00d7</button></td></tr>`; }
   function renderPrices(){
-    $("#pProd").innerHTML = catalog.productos.map(prodRow).join("");
-    $("#pExtra").innerHTML = catalog.extras.map(extraRow).join("");
-    $("#pSabores").value = catalog.sabores.join("\n");
-    $("#pRellenos").value = catalog.rellenos.join("\n");
-    $("#pToppings").value = catalog.toppings.join("\n");
-    const te = catalog.toppingExtra || {};
+    $("#pProd").innerHTML = baseCatalog.productos.map(prodRow).join("");
+    $("#pExtra").innerHTML = baseCatalog.extras.map(extraRow).join("");
+    $("#pSabores").value = baseCatalog.sabores.join("\n");
+    $("#pRellenos").value = baseCatalog.rellenos.join("\n");
+    $("#pToppings").value = baseCatalog.toppings.join("\n");
+    const te = baseCatalog.toppingExtra || {};
     $("#tePeq").value = te["Peque\u00f1o"] ?? ""; $("#teMed").value = te["Mediano"] ?? ""; $("#teGra").value = te["Grande"] ?? "";
     pricesDirty = false;
   }
@@ -1217,7 +1299,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     const toppingExtra = {"Peque\u00f1o":Number($("#tePeq").value)||0, "Mediano":Number($("#teMed").value)||0, "Grande":Number($("#teGra").value)||0};
     const extras = $$("#pExtra tr").map(r => ({nombre:r.querySelector(".en").value.trim(), precio:Number(r.querySelector(".ep").value)||0})).filter(e => e.nombre);
     const keys = new Set(); for (const p of productos){ const k = prodKey(p); if (keys.has(k)){ toast(`"${prodLabel(p)}" est\u00e1 repetido.`); return; } keys.add(k); }
-    const data = {productos, extras, toppingExtra, sabores:lines($("#pSabores").value), rellenos:lines($("#pRellenos").value), toppings:lines($("#pToppings").value), updatedAt:Date.now()};
+    const data = {productos, extras, toppingExtra, sabores:lines($("#pSabores").value), rellenos:lines($("#pRellenos").value), toppings:lines($("#pToppings").value), updatedAt:nowMs()};
     const b = $("#savePrices"); b.disabled = true;
     try{ await db.doc("config/catalogo").set(data); pricesDirty = false; toast("Precios guardados"); }
     catch(err){ toast(err && err.code === "invalid_argument" ? "No tienes permiso para cambiar precios." : "No se pudo guardar. Intenta de nuevo."); }
@@ -1320,7 +1402,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     return {
       id: "web:" + s.id, webId: s.id, enviadoEn: s.at,
       cliente: s.nombre, telefono: tel, origen: "Formulario web", fecha: s.fecha, hora,
-      dueAt: new Date(y||2000, (mo||1)-1, d||1, hh||0, mm||0).getTime(),
+      dueAt: dueOf(s.fecha, parseHora(hora)) || new Date(y||2000, (mo||1)-1, d||1, hh||0, mm||0).getTime(),
       entrega: "Retira", direccion: "", producto, cantidad: 1, sinCatalogo: !p,
       tipo: s.tipo, sabor: s.sabor, relleno: otro(s.relleno, s.dRelleno), topping: tops.join(", "),
       mensaje: s.mensaje, decoracion: s.deco, refImgs: [], refUrls, extras, extrasSinPrecio: sinPrecio,
@@ -1353,7 +1435,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     const nuevos = rows.filter(r => !before.has(r.id) && !webDone[r.id]);
     if (!webFirst && nuevos.length) chime();
     webFirst = false;
-    const d = new Date(at || Date.now());
+    const d = crDate(at || nowMs());
     webStatus = {state:"ok", text:`\u00daltima revisi\u00f3n: ${fmt12(pad(d.getHours()) + ":" + pad(d.getMinutes()))} \u00b7 se revisa cada 20 segundos`};
     renderWeb();
   }
@@ -1400,13 +1482,13 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       try{
         if (b.dataset.web === "ok"){
           const data = Object.assign({}, o); delete data.id;
-          data.status = "pendiente"; data.createdAt = Date.now();
+          data.status = "pendiente"; data.createdAt = nowMs();
           await db.collection("orders").doc("web-" + o.webId).set(data);
-          await db.doc("tally/" + o.webId).set({estado:"confirmado", orderId:"web-" + o.webId, at:Date.now()});
+          await db.doc("tally/" + o.webId).set({estado:"confirmado", orderId:"web-" + o.webId, at:nowMs()});
           webDone[o.webId] = {estado:"confirmado"}; renderWeb();
           toast("Pedido confirmado");
         } else {
-          await db.doc("tally/" + o.webId).set({estado:"rechazado", at:Date.now()});
+          await db.doc("tally/" + o.webId).set({estado:"rechazado", at:nowMs()});
           webDone[o.webId] = {estado:"rechazado"}; renderWeb();
           toast("Pedido rechazado");
         }
@@ -1416,9 +1498,9 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     wireConfirm(o, async c => {
       try{
         const data = Object.assign({}, o, confirmData(c, o)); delete data.id;
-        data.status = "pendiente"; data.createdAt = Date.now();
+        data.status = "pendiente"; data.createdAt = nowMs();
         await db.collection("orders").doc("web-" + o.webId).set(data);
-        await db.doc("tally/" + o.webId).set({estado:"confirmado", orderId:"web-" + o.webId, at:Date.now()});
+        await db.doc("tally/" + o.webId).set({estado:"confirmado", orderId:"web-" + o.webId, at:nowMs()});
         webDone[o.webId] = {estado:"confirmado"}; renderWeb();
         toast("Pedido confirmado"); sheet.close();
       }catch(err){ toast("Se abri\u00f3 WhatsApp, pero no se pudo guardar el pedido."); }
@@ -1429,7 +1511,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
 
   /* ---------- History & accounting ---------- */
   let hist = [], histById = {}, histLoaded = false, histLoading = null, histLimit = 150;
-  let contPer = "dia", contRef = new Date();
+  let contPer = "dia", contRef = crDate(nowMs());
   const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
   const histNorm = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
   function fmtFecha(f){
@@ -1450,7 +1532,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   function histRow(o, cont){
     const p = o.producto || {};
     let when;
-    if (cont){ const d = new Date(entregaTs(o)); when = `<b>${DAYS[d.getDay()].slice(0,3)} ${d.getDate()} ${MONTHS[d.getMonth()]}</b><small>${esc(fmt12(pad(d.getHours()) + ":" + pad(d.getMinutes())))}</small>`; }
+    if (cont){ const d = crDate(entregaTs(o)); when = `<b>${DAYS[d.getDay()].slice(0,3)} ${d.getDate()} ${MONTHS[d.getMonth()]}</b><small>${esc(fmt12(pad(d.getHours()) + ":" + pad(d.getMinutes())))}</small>`; }
     else when = `<b>${esc(fmtFecha(o.fecha))}</b><small>${esc(fmt12(o.hora))}</small>`;
     return `<button type="button" class="hrow" data-id="${esc(o.id)}"><span class="hd">${when}</span><span class="hc"><b>${esc(o.cliente || "Sin nombre")}</b><small>${esc(p.forma ? prodLabel(p) : "")}${o.sabor ? " \u00b7 " + esc(o.sabor) : ""}</small></span><span class="hs"><span class="tag s-${esc(o.status || "")}">${esc(STATUS[o.status] || o.status || "")}</span></span><span class="ht"><b>${esc(crc(o.total))}</b><small>${esc(pagoLabel(o))}</small></span></button>`;
   }
@@ -1541,7 +1623,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     $("#cDate").value = todayStr(contRef);
     $$("#cPer button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.p === contPer)));
     if (!histLoaded){ $("#cKpis").innerHTML = `<p class="hinfo">Cargando\u2026</p>`; $("#cBreak").innerHTML = ""; $("#cList").innerHTML = ""; return; }
-    const inRange = (o, s, e) => { const x = entregaTs(o); return x >= s && x < e; };
+    const inRange = (o, s, e) => { const x = crDate(entregaTs(o)).getTime(); return x >= s && x < e; };
     const list = hist.filter(o => o.status === "entregado" && inRange(o, a.getTime(), b.getTime())).sort((x, y) => entregaTs(y) - entregaTs(x));
     const t = sumUp(list);
     $("#cKpis").innerHTML = `<div class="kpi main"><span>Total</span><b>${crc(t.t)}</b></div>`
@@ -1572,7 +1654,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   $("#cPer").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; contPer = b.dataset.p; renderCont(); });
   $("#cPrev").addEventListener("click", () => contShift(-1));
   $("#cNext").addEventListener("click", () => contShift(1));
-  $("#cToday").addEventListener("click", () => { contRef = new Date(); renderCont(); });
+  $("#cToday").addEventListener("click", () => { contRef = crDate(nowMs()); renderCont(); });
   $("#cDate").addEventListener("change", e => { const [y,m,d] = (e.target.value || "").split("-").map(Number); if (y){ contRef = new Date(y, m - 1, d); renderCont(); } });
 
   /* ---------- Abonos y cobro ----------
@@ -1581,9 +1663,29 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
      o.pago resume TODO lo pagado del pedido (abonos + cobro) por m\u00e9todo, sin contar el vuelto,
      para que Historial y Contabilidad sumen lo que realmente entr\u00f3. */
   function abonosDe(o){
-    if (Array.isArray(o.abonos)) return o.abonos.filter(x => Number(x.monto) > 0);
-    const ab = Number(o.anticipo) || 0;
-    return ab > 0 ? [{monto: ab, metodo: "SINPE", fecha: o.abonoFecha || "", at: o.abonoAt || null}] : [];
+    const ant = Number(o.anticipo) || 0;
+    const legado = m => ({monto: m, metodo: "SINPE", fecha: o.abonoFecha || "", at: o.abonoAt || null});
+    if (!Array.isArray(o.abonos)) return ant > 0 ? [legado(ant)] : [];
+    const lista = o.abonos.filter(x => Number(x.monto) > 0);
+    const suma = lista.reduce((t, x) => t + Number(x.monto), 0);
+    /* A deposit saved by an outdated screen only raises "anticipo": count the difference instead of ignoring it. */
+    return ant > suma ? lista.concat(legado(ant - suma)) : lista;
+  }
+  /* Deposits and payment go through the server, which re-checks the saved amounts before writing. */
+  const cambioEnOtro = err => /PEDIDO_CAMBIO|PEDIDO_NO_EXISTE/.test(String((err && err.message) || err));
+  async function orderCall(fn, id, ...args){
+    const saved = await api(fn, id, ...args);
+    local.orders[id] = saved;
+    if (histById[id]){ Object.keys(histById[id]).forEach(k => { if (k !== "id") delete histById[id][k]; }); Object.assign(histById[id], saved); refreshHistViews(); }
+    notify();
+    return saved;
+  }
+  async function freshOrder(id){
+    if (refreshP) await refreshP.catch(() => {});
+    await refreshAll();
+    let f = orders.find(x => x.id === id);
+    if (!f && histLoaded){ await loadHistory(); f = histById[id]; }
+    return f || null;
   }
   const abonado = o => abonosDe(o).reduce((t, x) => t + (Number(x.monto) || 0), 0);
   const saldoDe = o => Math.max((Number(o.total) || 0) - abonado(o), 0);
@@ -1600,6 +1702,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   const montoDe = el => Math.max(Math.round(Number(el && el.value) || 0), 0);
 
   function showAbonoForm(o){
+    o = orders.find(x => x.id === o.id) || o;
     const total = Number(o.total) || 0, lista = abonosDe(o), ya = abonado(o), saldo = saldoDe(o);
     let fotos = [], subiendo = 0;
     $("#sheetBody").innerHTML = `
@@ -1646,18 +1749,20 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       const b = e.target.closest("button"); if (!b) return;
       if (b.dataset.act === "back"){ openSheet(o); return; }
       if (b.dataset.act !== "abok" || !check()) return;
-      const now = Date.now(), hoy = $("#abHoy").checked, fecha = hoy ? todayStr() : $("#abF").value;
-      const [y, m, d] = fecha.split("-").map(Number);
-      const nuevo = {monto: montoDe($("#abM")), metodo: ($('input[name=abMet]:checked') || {}).value || "SINPE", fecha, at: hoy ? now : new Date(y, m - 1, d, 12, 0).getTime(), registradoAt: now};
-      const data = Object.assign(abonosData(lista.concat(nuevo)), {updatedAt: now});
-      if (fotos.length) data.comprobantes = (o.comprobantes || []).concat(fotos);
+      const nuevo = {monto: montoDe($("#abM")), metodo: ($('input[name=abMet]:checked') || {}).value || "SINPE", fecha: $("#abHoy").checked ? "" : $("#abF").value};
       b.disabled = true;
-      try{ await db.collection("orders").doc(o.id).update(data); Object.assign(o, data); toast("Abono de " + crc(nuevo.monto) + " guardado"); openSheet(o); }
-      catch(err){ toast("No se pudo guardar. Intenta de nuevo."); b.disabled = false; }
+      try{ const saved = await orderCall("addAbono", o.id, nuevo, fotos, ya); toast("Abono de " + crc(nuevo.monto) + " guardado"); openSheet(Object.assign({id: o.id}, saved)); }
+      catch(err){
+        if (cambioEnOtro(err)){
+          toast("Este pedido cambi\u00f3 en otro dispositivo. Revise el saldo de nuevo.");
+          const f = await freshOrder(o.id); if (f && f.status !== "entregado" && f.status !== "cancelado") showAbonoForm(f); else if (f) openSheet(f); else sheet.close();
+        } else { toast("No se pudo guardar. Intenta de nuevo."); b.disabled = false; }
+      }
     };
   }
 
   function showCobroForm(o){
+    o = orders.find(x => x.id === o.id) || o;
     const total = Number(o.total) || 0, lista = abonosDe(o), ya = abonado(o), saldo = saldoDe(o), already = o.status === "entregado";
     const prev = already && o.pago && o.pago.cobro ? o.pago.cobro : null;
     $("#sheetBody").innerHTML = `
@@ -1714,20 +1819,16 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       if (b.dataset.act === "back"){ openSheet(o); return; }
       if (b.dataset.act !== "cobok") return;
       const r = evalu(); if (!r.ok) return;
-      const now = Date.now(), cuando = already ? entregaTs(o) : now;
-      const abS = lista.filter(x => x.metodo === "SINPE").reduce((t, x) => t + Number(x.monto), 0);
-      const abE = lista.filter(x => x.metodo === "Efectivo").reduce((t, x) => t + Number(x.monto), 0);
-      const S = abS + r.s, E = abE + r.e;
-      const cobro = {metodo: r.metodo, sinpe: r.s, efectivo: r.e, efectivoRecibido: r.recibido, vuelto: r.vuelto, monto: r.s + r.e, fecha: todayStr(new Date(cuando)), at: cuando};
-      const data = {pago: {metodo: metodoDe(S, E), sinpe: S, efectivo: E, total: S + E, cobro}, updatedAt: now};
-      if (!Array.isArray(o.abonos) && lista.length) Object.assign(data, abonosData(lista));
-      if (!already) Object.assign(data, {status: "entregado", entregadoAt: now});
-      else if (!o.entregadoAt) data.entregadoAt = entregaTs(o);
       b.disabled = true;
       try{
-        await db.collection("orders").doc(o.id).update(data); sheet.close();
+        await orderCall("cobrar", o.id, {metodo: r.metodo, sinpe: r.s, efectivoRecibido: r.recibido}, ya, total); sheet.close();
         toast((already ? "Cobro guardado" : "Pedido entregado") + (r.vuelto ? ". Vuelto a dar: " + crc(r.vuelto) : ""));
-      }catch(err){ toast("No se pudo guardar. Intenta de nuevo."); b.disabled = false; }
+      }catch(err){
+        if (cambioEnOtro(err)){
+          toast("Este pedido cambi\u00f3 en otro dispositivo. Revise el saldo de nuevo.");
+          const f = await freshOrder(o.id); if (f && f.status !== "cancelado") showCobroForm(f); else if (f) openSheet(f); else sheet.close();
+        } else { toast("No se pudo guardar. Intenta de nuevo."); b.disabled = false; }
+      }
     };
   }
 
@@ -1760,7 +1861,7 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
 
   /* ---------- Data ---------- */
   function onOrders(snap){
-    const incoming = snap.docs.filter(d => d.exists).map(d => Object.assign({id:d.id}, d.data()));
+    const incoming = snap.docs.filter(d => d.exists).map(d => { const o = Object.assign({id:d.id}, d.data()); o.dueAt = dueOf(o.fecha, parseHora(o.hora)) || o.dueAt; return o; });
     const newOnes = incoming.filter(o => !seen.has(o.id) && o.status === "pendiente");
     orders = incoming;
     if (!firstLoad && newOnes.length) chime();
@@ -1770,18 +1871,21 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     setConn("live","En vivo");
   }
   function onCatalog(snap){
-    const d = snap.exists ? snap.data() : {};
-    catalog = {
-      productos: Array.isArray(d.productos) ? d.productos : [],
-      extras: Array.isArray(d.extras) ? d.extras : [],
-      sabores: Array.isArray(d.sabores) && d.sabores.length ? d.sabores : EMPTY_CAT.sabores,
-      rellenos: Array.isArray(d.rellenos) ? d.rellenos : [],
-      toppings: Array.isArray(d.toppings) ? d.toppings : [],
-      toppingExtra: d.toppingExtra && typeof d.toppingExtra === "object" ? d.toppingExtra : {}
-    };
-    catalogLoaded = true;
-    if (!editingId) renderCatalogControls();
+    const d = (snap.exists && snap.data()) || {};
+    const vacio = !Object.keys(d).length;
+    if (vacio && (catalogLoaded || baseCatalog.productos.length)) return;   /* an empty answer never wipes the options already on screen */
+    const j = JSON.stringify(d);
+    if (j === lastCatJSON && catalogLoaded) return;                         /* nothing changed: leave the lists alone */
+    lastCatJSON = j; baseCatalog = normCat(d);
+    if (!vacio){ catalogLoaded = true; try{ localStorage.setItem(CAT_KEY, j); }catch(e){} }
+    applyCatalog();
+    if (!editingId) renderCatalogControls(); else updateTotals();
     if (!$("#view-prices").hidden && !pricesDirty) renderPrices();
+  }
+  /* Last catalog seen on this device, so the form has its options at once while the connection starts. */
+  const CAT_KEY = "marlenCat";
+  function loadCachedCatalog(){
+    try{ const c = JSON.parse(localStorage.getItem(CAT_KEY) || "null"); if (c && Array.isArray(c.productos) && c.productos.length){ baseCatalog = normCat(c); applyCatalog(); } }catch(e){}
   }
 
   /* ---------- Apps Script data layer ----------
@@ -1868,18 +1972,46 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
   const appAssets = {
     upload: async b => {
       const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(b); });
-      const id = await api("uploadPhoto", b64, b.type || "image/jpeg", "foto-" + Date.now() + ".jpg");
+      const id = await api("uploadPhoto", b64, b.type || "image/jpeg", "foto-" + nowMs() + ".jpg");
       photoCache[id] = "data:" + (b.type || "image/jpeg") + ";base64," + b64;
       return {id};
     },
     delete: id => api("trashPhoto", id)
   };
 
-  let refreshing = false, failures = 0;
-  async function refreshAll(){
-    if (refreshing) return; refreshing = true;
+  let refreshP = null, failures = 0, newVersion = false;
+  function refreshAll(){
+    if (!refreshP) refreshP = doRefresh().finally(() => { refreshP = null; });
+    return refreshP;
+  }
+  function checkClock(serverNow){
+    const diff = serverNow - Date.now();
+    const antes = skewMs;
+    skewMs = Math.abs(diff) > 90000 ? diff : 0;
+    if (skewMs !== antes){ try{ localStorage.setItem("marlenSkew", String(skewMs)); }catch(e){} tickClock(); }
+    $("#clockNotice").hidden = Math.abs(diff) < 5 * 60000;
+  }
+  const formEmpezado = () => !!(form.cliente.value.trim() || form.telefono.value.trim() || $("#prodSel").value || form.mensaje.value.trim() || form.decoracion.value.trim() || form.notas.value.trim() || refIds.length || payIds.length);
+  const ocupado = () => !!editingId || sheet.open || uploading > 0 || !!document.getElementById("pinGate") || pricesDirty || formEmpezado();
+  async function checkVersion(){
+    try{
+      const r = await fetch(location.pathname + "?v=" + Date.now(), {cache: "no-store"}); if (!r.ok) return;
+      const m = (await r.text()).match(/const BUILD = "([^"]+)"/);
+      if (m && m[1] !== BUILD){ newVersion = m[1]; applyVersion(); }
+    }catch(e){}
+  }
+  /* A newer page is published: reload by itself when nobody is in the middle of something, otherwise offer a button. */
+  function applyVersion(){
+    if (!newVersion) return;
+    let ya = ""; try{ ya = sessionStorage.getItem("marlenReload") || ""; }catch(e){}
+    if (!ocupado() && ya !== newVersion){ try{ sessionStorage.setItem("marlenReload", newVersion); }catch(e){} location.reload(); return; }
+    $("#verNotice").hidden = false;
+  }
+  $("#verBtn").addEventListener("click", () => location.reload());
+  async function doRefresh(){
     try{
       const st = await api("getState");
+      if (st.at) checkClock(st.at);
       local.orders = {}; (st.orders || []).forEach(o => local.orders[o.id] = o.data);
       local.config = {catalogo: st.catalog || {}};
       local.tally = st.tally || {};
@@ -1893,10 +2025,13 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
       setConn("off", "Sin conexi\u00f3n");
       if (failures >= 2) $("#dbNotice").hidden = false;
       setWebStatus("err", "No se pudo revisar el formulario. Se vuelve a intentar en 20 segundos.");
-    }finally{ refreshing = false; }
+      if (!catalogLoaded && failures <= 6) setTimeout(refreshAll, 3000);   /* first load failed: do not make the form wait 20 seconds */
+    }
+    applyVersion();
   }
 
   async function init(){
+    loadCachedCatalog();
     resetForm();
     const h = location.hash;
     showView(h === "#cocina" ? "kitchen" : h === "#precios" ? "prices" : h === "#historial" ? "hist" : h === "#contabilidad" ? "cont" : "form");
@@ -1908,7 +2043,8 @@ dialog::backdrop{background:rgba(20,8,8,.55)}
     db.collection("tally").onSnapshot(snap => { webDone = {}; snap.docs.forEach(d => webDone[d.id] = d.data()); webDoneLoaded = true; renderWeb(); });
     if (!getPin()) askPin(false); else await refreshAll();
     setInterval(() => { if (!document.hidden && getPin() && !document.getElementById("pinGate")) refreshAll(); }, 20000);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshAll(); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden){ refreshAll(); checkVersion(); } });
+    setInterval(checkVersion, 5 * 60000); setTimeout(checkVersion, 30000);
   }
   init();
 })();
